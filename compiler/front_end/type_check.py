@@ -221,6 +221,14 @@ def _type_check_monomorphic_operator(expression, source_file_name, errors):
             1,
             "function",
         ),
+        ir_data.FunctionMapping.CRC: (
+            int_result,
+            field_args,
+            n_ary,
+            1,
+            1,
+            "function",
+        ),
     }
     function = expression.function.function
     (set_result_type, check_arg, arg_names, min_args, max_args, kind) = functions[

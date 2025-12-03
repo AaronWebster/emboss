@@ -858,6 +858,7 @@ def _empty_string():
 @_formats("equality-or-less-expression-right -> less-expression-right")
 @_formats("expression -> choice-expression")
 @_formats("field-body? -> field-body")
+@_formats('function-name -> "$crc32"')
 @_formats('function-name -> "$lower_bound"')
 @_formats('function-name -> "$present"')
 @_formats('function-name -> "$max"')

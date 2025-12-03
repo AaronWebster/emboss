@@ -215,6 +215,7 @@ def _text_to_function(text):
         "$present": ir_data.FunctionMapping.PRESENCE,
         "$upper_bound": ir_data.FunctionMapping.UPPER_BOUND,
         "$lower_bound": ir_data.FunctionMapping.LOWER_BOUND,
+        "$crc32": ir_data.FunctionMapping.CRC,
     }
     return functions[text]
 
@@ -1419,6 +1420,7 @@ def _name(word):
 @_handles('function-name -> "$present"')
 @_handles('function-name -> "$upper_bound"')
 @_handles('function-name -> "$lower_bound"')
+@_handles('function-name -> "$crc32"')
 def _word(word):
     return ir_data.Word(text=word.text)
 

@@ -100,7 +100,8 @@ numeric-constant                       -> Number
 argument-list                          -> <empty>
                                         | expression comma-then-expression*
 comma-then-expression                  -> "," expression
-function-name                          -> "$lower_bound"
+function-name                          -> "$crc32"
+                                        | "$lower_bound"
                                         | "$max"
                                         | "$present"
                                         | "$upper_bound"
@@ -351,6 +352,7 @@ Pattern                                    | Symbol
 `\$upper_bound`                            | `"$upper_bound"`
 `\$lower_bound`                            | `"$lower_bound"`
 `\$next`                                   | `"$next"`
+`\$crc32`                                  | `"$crc32"`
 `\$size_in_bits`                           | `"$size_in_bits"`
 `\$size_in_bytes`                          | `"$size_in_bytes"`
 `\$max_size_in_bits`                       | `"$max_size_in_bits"`
