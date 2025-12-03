@@ -65,7 +65,7 @@ def cpp_golden_test(name, emb_file, golden_file, import_dirs = []):
             "$(location :emboss_codegen_cpp)",
             "$(location %s)" % emb_file,
             "$(location %s)" % golden_file,
-        ] + ["--import-dir=" + d for d in import_dirs],
+        ] + import_dirs,
         data = [
             "//compiler/front_end:emboss_front_end",
             ":emboss_codegen_cpp",
