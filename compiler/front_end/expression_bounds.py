@@ -131,7 +131,7 @@ def _compute_constraints_of_existence_function(expression, ir):
 
 def _compute_constraints_of_crc_function(expression):
     """Computes the constraints of a $crc32(field) expression.
-    
+
     CRC32 returns a 32-bit unsigned integer, so the result is in range [0, 2^32-1].
     """
     # CRC32 returns an unsigned 32-bit integer

@@ -79,6 +79,11 @@ inline constexpr ::std::uint32_t kCrc32Table[256] = {
 // Compute CRC-32 (IEEE) for a byte array view.
 // The view must provide IsComplete(), SizeInBytes(), and element access via
 // operator[].
+//
+// Note: This implementation uses per-element access through the view's operator[]
+// for compatibility with all Emboss array view types. For applications requiring
+// maximum performance, consider using a custom CRC implementation with direct
+// memory access.
 template <typename ArrayView>
 inline ::std::uint32_t Crc32(const ArrayView& view) {
   ::std::uint32_t crc = 0xFFFFFFFF;
