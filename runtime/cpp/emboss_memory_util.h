@@ -761,6 +761,9 @@ class LittleEndianByteOrderer final {
     buffer_.template UncheckedWriteLittleEndianUInt<kBits>(value);
   }
 
+  // Provide access to the underlying buffer for wide bit block support
+  typename BufferType::ByteType *data() const { return buffer_.data(); }
+
  private:
   BufferType buffer_;
 };
@@ -831,6 +834,9 @@ class BigEndianByteOrderer final {
       typename LeastWidthInteger<kBits>::Unsigned value) const {
     buffer_.template UncheckedWriteBigEndianUInt<kBits>(value);
   }
+
+  // Provide access to the underlying buffer for wide bit block support
+  typename BufferType::ByteType *data() const { return buffer_.data(); }
 
  private:
   BufferType buffer_;
@@ -1045,6 +1051,388 @@ class BitBlock final {
   }
 
  private:
+  BufferType buffer_;
+};
+
+// LittleEndianWideOffsetBitBlock handles bit fields within wide bit blocks
+// (>64 bits) for little-endian byte ordering. It reads/writes only the bytes
+// necessary for the field being accessed.
+//
+// For little-endian: bit 0 is the LSB of byte 0
+//
+// Individual fields within the wide bits type are still limited to 64 bits,
+// which is enforced by the type constraints in prelude.emb.
+template <class BufferType>
+class LittleEndianWideOffsetBitBlock final {
+ public:
+  // ValueType is always uint64_t since individual fields are limited to 64 bits
+  using ValueType = ::std::uint64_t;
+
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  using OffsetStorageType = LittleEndianWideOffsetBitBlock<BufferType>;
+
+  LittleEndianWideOffsetBitBlock()
+      : buffer_(), offset_(0), size_(0), total_bits_(0), ok_(false) {}
+  explicit LittleEndianWideOffsetBitBlock(BufferType buffer,
+                                          ::std::size_t offset,
+                                          ::std::size_t size,
+                                          ::std::size_t total_bits, bool ok)
+      : buffer_{buffer},
+        offset_{static_cast</**/ ::std::uint16_t>(offset)},
+        size_{static_cast</**/ ::std::uint8_t>(size)},
+        total_bits_{static_cast</**/ ::std::uint16_t>(total_bits)},
+        ok_{ok && offset <= 0xFFFF && size <= 64 && total_bits <= 0xFFFF &&
+            offset + size <= total_bits} {}
+  LittleEndianWideOffsetBitBlock(const LittleEndianWideOffsetBitBlock &other) =
+      default;
+  LittleEndianWideOffsetBitBlock &operator=(
+      const LittleEndianWideOffsetBitBlock &other) = default;
+
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  OffsetStorageType<kNewAlignment, kNewOffset> GetOffsetStorage(
+      ::std::size_t offset, ::std::size_t size) const {
+    return OffsetStorageType<kNewAlignment, kNewOffset>{
+        buffer_, offset_ + offset, size, total_bits_,
+        ok_ && offset + size <= size_};
+  }
+
+  ValueType ReadUInt() const {
+    EMBOSS_CHECK(Ok());
+    return UncheckedReadUInt();
+  }
+
+  ValueType UncheckedReadUInt() const {
+    // For little-endian: bit 0 is the LSB of byte 0
+    const ::std::size_t start_byte = offset_ / 8;
+    const ::std::size_t bit_in_start_byte = offset_ % 8;
+    const ::std::size_t end_bit = offset_ + size_;
+    const ::std::size_t bytes_needed = (end_bit + 7) / 8 - start_byte;
+
+    // Read the necessary bytes (up to 9 bytes to cover a 64-bit field
+    // that is not byte-aligned)
+    ValueType result = 0;
+    for (::std::size_t i = 0; i < bytes_needed && i < 9; ++i) {
+      const ::std::size_t byte_idx = start_byte + i;
+      if (byte_idx < buffer_.SizeInBytes()) {
+        result |=
+            static_cast<ValueType>(
+                static_cast</**/ ::std::uint8_t>(buffer_.data()[byte_idx]))
+            << (i * 8);
+      }
+    }
+
+    // Shift to align the field and mask to size
+    result >>= bit_in_start_byte;
+    return MaskToNBits(result, size_);
+  }
+
+  void WriteUInt(ValueType value) const {
+    EMBOSS_CHECK_EQ(value, MaskToNBits(value, size_));
+    EMBOSS_CHECK(Ok());
+    UncheckedWriteUInt(value);
+  }
+
+  void UncheckedWriteUInt(ValueType value) const {
+    const ::std::size_t start_byte = offset_ / 8;
+    const ::std::size_t bit_in_start_byte = offset_ % 8;
+    const ::std::size_t end_bit = offset_ + size_;
+    const ::std::size_t bytes_needed = (end_bit + 7) / 8 - start_byte;
+
+    // Read the bytes we need to modify
+    ValueType original = 0;
+    for (::std::size_t i = 0; i < bytes_needed && i < 9; ++i) {
+      const ::std::size_t byte_idx = start_byte + i;
+      if (byte_idx < buffer_.SizeInBytes()) {
+        original |=
+            static_cast<ValueType>(
+                static_cast</**/ ::std::uint8_t>(buffer_.data()[byte_idx]))
+            << (i * 8);
+      }
+    }
+
+    // Create a mask for our field position within the read bytes
+    ValueType mask = MaskToNBits(static_cast<ValueType>(~ValueType{0}), size_)
+                     << bit_in_start_byte;
+
+    // Merge the new value
+    ValueType merged = (original & ~mask) | (value << bit_in_start_byte);
+
+    // Write back the modified bytes
+    for (::std::size_t i = 0; i < bytes_needed && i < 9; ++i) {
+      const ::std::size_t byte_idx = start_byte + i;
+      if (byte_idx < buffer_.SizeInBytes()) {
+        buffer_.data()[byte_idx] =
+            static_cast<typename BufferType::ByteType>(merged & 0xFF);
+      }
+      merged >>= 8;
+    }
+  }
+
+  ::std::size_t SizeInBits() const { return size_; }
+  bool Ok() const { return ok_ && buffer_.Ok(); }
+
+ private:
+  BufferType buffer_;
+  ::std::uint16_t offset_;     // Bit offset from start of bits type
+  ::std::uint8_t size_;        // Size of this field in bits (max 64)
+  ::std::uint16_t total_bits_; // Total size of the containing bits type
+  bool ok_;
+};
+
+// BigEndianWideOffsetBitBlock handles bit fields within wide bit blocks
+// (>64 bits) for big-endian byte ordering. It reads/writes only the bytes
+// necessary for the field being accessed.
+//
+// For big-endian: bit 0 is the LSB of the last byte (byte N-1)
+//
+// Individual fields within the wide bits type are still limited to 64 bits,
+// which is enforced by the type constraints in prelude.emb.
+template <class BufferType>
+class BigEndianWideOffsetBitBlock final {
+ public:
+  using ValueType = ::std::uint64_t;
+
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  using OffsetStorageType = BigEndianWideOffsetBitBlock<BufferType>;
+
+  BigEndianWideOffsetBitBlock()
+      : buffer_(), offset_(0), size_(0), total_bits_(0), ok_(false) {}
+  explicit BigEndianWideOffsetBitBlock(BufferType buffer, ::std::size_t offset,
+                                       ::std::size_t size,
+                                       ::std::size_t total_bits, bool ok)
+      : buffer_{buffer},
+        offset_{static_cast</**/ ::std::uint16_t>(offset)},
+        size_{static_cast</**/ ::std::uint8_t>(size)},
+        total_bits_{static_cast</**/ ::std::uint16_t>(total_bits)},
+        ok_{ok && offset <= 0xFFFF && size <= 64 && total_bits <= 0xFFFF &&
+            offset + size <= total_bits} {}
+  BigEndianWideOffsetBitBlock(const BigEndianWideOffsetBitBlock &other) =
+      default;
+  BigEndianWideOffsetBitBlock &operator=(
+      const BigEndianWideOffsetBitBlock &other) = default;
+
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  OffsetStorageType<kNewAlignment, kNewOffset> GetOffsetStorage(
+      ::std::size_t offset, ::std::size_t size) const {
+    return OffsetStorageType<kNewAlignment, kNewOffset>{
+        buffer_, offset_ + offset, size, total_bits_,
+        ok_ && offset + size <= size_};
+  }
+
+  ValueType ReadUInt() const {
+    EMBOSS_CHECK(Ok());
+    return UncheckedReadUInt();
+  }
+
+  ValueType UncheckedReadUInt() const {
+    // For big-endian: bit 0 is the LSB of the last byte
+    // So bit offset X corresponds to:
+    //   byte index = total_bytes - 1 - (X / 8)
+    //   bit in byte = X % 8
+    const ::std::size_t total_bytes = (total_bits_ + 7) / 8;
+    const ::std::size_t end_bit = offset_ + size_;
+    const ::std::size_t start_reversed_byte = offset_ / 8;
+    const ::std::size_t end_reversed_byte = (end_bit + 7) / 8;
+    const ::std::size_t bit_in_start_byte = offset_ % 8;
+
+    // Read bytes from back to front
+    ValueType result = 0;
+    for (::std::size_t i = start_reversed_byte; i < end_reversed_byte; ++i) {
+      const ::std::size_t byte_idx = total_bytes - 1 - i;
+      if (byte_idx < buffer_.SizeInBytes()) {
+        result |=
+            static_cast<ValueType>(
+                static_cast</**/ ::std::uint8_t>(buffer_.data()[byte_idx]))
+            << ((i - start_reversed_byte) * 8);
+      }
+    }
+
+    // Shift to align the field and mask to size
+    result >>= bit_in_start_byte;
+    return MaskToNBits(result, size_);
+  }
+
+  void WriteUInt(ValueType value) const {
+    EMBOSS_CHECK_EQ(value, MaskToNBits(value, size_));
+    EMBOSS_CHECK(Ok());
+    UncheckedWriteUInt(value);
+  }
+
+  void UncheckedWriteUInt(ValueType value) const {
+    const ::std::size_t total_bytes = (total_bits_ + 7) / 8;
+    const ::std::size_t end_bit = offset_ + size_;
+    const ::std::size_t start_reversed_byte = offset_ / 8;
+    const ::std::size_t end_reversed_byte = (end_bit + 7) / 8;
+    const ::std::size_t bit_in_start_byte = offset_ % 8;
+
+    // Read the bytes we need to modify
+    ValueType original = 0;
+    for (::std::size_t i = start_reversed_byte; i < end_reversed_byte; ++i) {
+      const ::std::size_t byte_idx = total_bytes - 1 - i;
+      if (byte_idx < buffer_.SizeInBytes()) {
+        original |=
+            static_cast<ValueType>(
+                static_cast</**/ ::std::uint8_t>(buffer_.data()[byte_idx]))
+            << ((i - start_reversed_byte) * 8);
+      }
+    }
+
+    // Create a mask for our field position
+    ValueType mask = MaskToNBits(static_cast<ValueType>(~ValueType{0}), size_)
+                     << bit_in_start_byte;
+
+    // Merge the new value
+    ValueType merged = (original & ~mask) | (value << bit_in_start_byte);
+
+    // Write back the modified bytes
+    for (::std::size_t i = start_reversed_byte; i < end_reversed_byte; ++i) {
+      const ::std::size_t byte_idx = total_bytes - 1 - i;
+      if (byte_idx < buffer_.SizeInBytes()) {
+        buffer_.data()[byte_idx] =
+            static_cast<typename BufferType::ByteType>(merged & 0xFF);
+      }
+      merged >>= 8;
+    }
+  }
+
+  ::std::size_t SizeInBits() const { return size_; }
+  bool Ok() const { return ok_ && buffer_.Ok(); }
+
+ private:
+  BufferType buffer_;
+  ::std::uint16_t offset_;
+  ::std::uint8_t size_;
+  ::std::uint16_t total_bits_;
+  bool ok_;
+};
+
+// LittleEndianWideBitBlock is a view of a sequence of bits larger than 64 bits
+// with little-endian byte ordering.
+template <class BufferType, ::std::size_t kBufferSizeInBits>
+class LittleEndianWideBitBlock final {
+  static_assert(kBufferSizeInBits % 8 == 0,
+                "LittleEndianWideBitBlock can only operate on byte buffers.");
+  static_assert(
+      kBufferSizeInBits > 64,
+      "LittleEndianWideBitBlock is for buffers larger than 64 bits; use "
+      "BitBlock for smaller sizes.");
+
+ public:
+  using ValueType = ::std::uint64_t;
+
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  using OffsetStorageType =
+      LittleEndianWideOffsetBitBlock<typename BufferType::BufferType>;
+
+  explicit LittleEndianWideBitBlock() : buffer_() {}
+  explicit LittleEndianWideBitBlock(BufferType buffer) : buffer_{buffer} {}
+  explicit LittleEndianWideBitBlock(typename BufferType::BufferType buffer)
+      : buffer_{buffer} {}
+  LittleEndianWideBitBlock(const LittleEndianWideBitBlock &) = default;
+  LittleEndianWideBitBlock(LittleEndianWideBitBlock &&) = default;
+  LittleEndianWideBitBlock &operator=(const LittleEndianWideBitBlock &) =
+      default;
+  LittleEndianWideBitBlock &operator=(LittleEndianWideBitBlock &&) = default;
+  ~LittleEndianWideBitBlock() = default;
+
+  static constexpr ::std::size_t Bits() { return kBufferSizeInBits; }
+
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  OffsetStorageType<kNewAlignment, kNewOffset> GetOffsetStorage(
+      ::std::size_t offset, ::std::size_t size) const {
+    return OffsetStorageType<kNewAlignment, kNewOffset>{
+        GetUnderlyingBuffer(), offset, size, kBufferSizeInBits,
+        Ok() && offset + size <= kBufferSizeInBits};
+  }
+
+  // Reading the entire wide bit block is not supported
+  ValueType ReadUInt() const {
+    EMBOSS_CHECK(false &&
+                 "Cannot read entire WideBitBlock as a single integer");
+    return 0;
+  }
+  ValueType UncheckedReadUInt() const { return 0; }
+  void WriteUInt(ValueType /*value*/) const {
+    EMBOSS_CHECK(false &&
+                 "Cannot write entire WideBitBlock as a single integer");
+  }
+  void UncheckedWriteUInt(ValueType /*value*/) const {}
+
+  ::std::size_t SizeInBits() const { return kBufferSizeInBits; }
+  bool Ok() const {
+    return buffer_.Ok() && buffer_.SizeInBytes() * 8 == kBufferSizeInBits;
+  }
+
+ private:
+  typename BufferType::BufferType GetUnderlyingBuffer() const {
+    return typename BufferType::BufferType(buffer_.data(),
+                                           buffer_.SizeInBytes());
+  }
+
+  BufferType buffer_;
+};
+
+// BigEndianWideBitBlock is a view of a sequence of bits larger than 64 bits
+// with big-endian byte ordering.
+template <class BufferType, ::std::size_t kBufferSizeInBits>
+class BigEndianWideBitBlock final {
+  static_assert(kBufferSizeInBits % 8 == 0,
+                "BigEndianWideBitBlock can only operate on byte buffers.");
+  static_assert(
+      kBufferSizeInBits > 64,
+      "BigEndianWideBitBlock is for buffers larger than 64 bits; use BitBlock "
+      "for smaller sizes.");
+
+ public:
+  using ValueType = ::std::uint64_t;
+
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  using OffsetStorageType =
+      BigEndianWideOffsetBitBlock<typename BufferType::BufferType>;
+
+  explicit BigEndianWideBitBlock() : buffer_() {}
+  explicit BigEndianWideBitBlock(BufferType buffer) : buffer_{buffer} {}
+  explicit BigEndianWideBitBlock(typename BufferType::BufferType buffer)
+      : buffer_{buffer} {}
+  BigEndianWideBitBlock(const BigEndianWideBitBlock &) = default;
+  BigEndianWideBitBlock(BigEndianWideBitBlock &&) = default;
+  BigEndianWideBitBlock &operator=(const BigEndianWideBitBlock &) = default;
+  BigEndianWideBitBlock &operator=(BigEndianWideBitBlock &&) = default;
+  ~BigEndianWideBitBlock() = default;
+
+  static constexpr ::std::size_t Bits() { return kBufferSizeInBits; }
+
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  OffsetStorageType<kNewAlignment, kNewOffset> GetOffsetStorage(
+      ::std::size_t offset, ::std::size_t size) const {
+    return OffsetStorageType<kNewAlignment, kNewOffset>{
+        GetUnderlyingBuffer(), offset, size, kBufferSizeInBits,
+        Ok() && offset + size <= kBufferSizeInBits};
+  }
+
+  ValueType ReadUInt() const {
+    EMBOSS_CHECK(false &&
+                 "Cannot read entire WideBitBlock as a single integer");
+    return 0;
+  }
+  ValueType UncheckedReadUInt() const { return 0; }
+  void WriteUInt(ValueType /*value*/) const {
+    EMBOSS_CHECK(false &&
+                 "Cannot write entire WideBitBlock as a single integer");
+  }
+  void UncheckedWriteUInt(ValueType /*value*/) const {}
+
+  ::std::size_t SizeInBits() const { return kBufferSizeInBits; }
+  bool Ok() const {
+    return buffer_.Ok() && buffer_.SizeInBytes() * 8 == kBufferSizeInBits;
+  }
+
+ private:
+  typename BufferType::BufferType GetUnderlyingBuffer() const {
+    return typename BufferType::BufferType(buffer_.data(),
+                                           buffer_.SizeInBytes());
+  }
+
   BufferType buffer_;
 };
 

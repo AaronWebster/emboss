@@ -345,9 +345,20 @@ def _offset_storage_adapter(buffer_type, alignment, static_offset):
 
 def _bytes_to_bits_convertor(buffer_type, byte_order, size):
     assert byte_order, "byte_order should not be empty."
-    return "{}::BitBlock</**/{}::{}ByteOrderer<typename {}>, {}>".format(
-        _SUPPORT_NAMESPACE, _SUPPORT_NAMESPACE, byte_order, buffer_type, size
-    )
+    if size > 64:
+        # For wide bits (>64 bits), use the specialized WideBitBlock classes
+        return "{}::{}WideBitBlock</**/{}::{}ByteOrderer<typename {}>, {}>".format(
+            _SUPPORT_NAMESPACE,
+            byte_order,
+            _SUPPORT_NAMESPACE,
+            byte_order,
+            buffer_type,
+            size,
+        )
+    else:
+        return "{}::BitBlock</**/{}::{}ByteOrderer<typename {}>, {}>".format(
+            _SUPPORT_NAMESPACE, _SUPPORT_NAMESPACE, byte_order, buffer_type, size
+        )
 
 
 def _get_fully_qualified_namespace(name, ir):
