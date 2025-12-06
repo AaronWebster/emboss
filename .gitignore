@@ -9,3 +9,4 @@ __pycache__
 # IDEs
 .vscode
 
+_codeql_detected_source_root
