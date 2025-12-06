@@ -329,14 +329,6 @@ def _wrap_in_namespace(body, namespace):
     return body
 
 
-def _get_type_size(type_ir, ir):
-    size = ir_util.fixed_size_of_type_in_bits(type_ir, ir)
-    assert (
-        size is not None
-    ), "_get_type_size should only be called for constant-sized types."
-    return size
-
-
 def _offset_storage_adapter(buffer_type, alignment, static_offset):
     return "{}::template OffsetStorageType</**/{}, {}>".format(
         buffer_type, alignment, static_offset
@@ -497,42 +489,82 @@ def _get_cpp_view_type_for_physical_type(
     if ir_util.is_array(type_ir):
         # An array view is parameterized by the element's view type.
         base_type = type_ir.array_type.base_type
-        element_size_in_bits = _get_type_size(base_type, ir)
-        assert (
-            element_size_in_bits
-        ), "TODO(bolms): Implement arrays of dynamically-sized elements."
-        assert (
-            element_size_in_bits % parent_addressable_unit == 0
-        ), "Array elements must fall on byte boundaries."
-        element_size = element_size_in_bits // parent_addressable_unit
-        element_view_type, element_view_parameter_types, element_view_parameters = (
-            _get_cpp_view_type_for_physical_type(
-                base_type,
-                element_size_in_bits,
-                byte_order,
-                ir,
-                _offset_storage_adapter(buffer_type, element_size, 0),
-                parent_addressable_unit,
-                validator,
+        element_size_in_bits = ir_util.fixed_size_of_type_in_bits(base_type, ir)
+        if element_size_in_bits is not None:
+            # Fixed-size elements: use the standard GenericArrayView
+            assert (
+                element_size_in_bits % parent_addressable_unit == 0
+            ), "Array elements must fall on byte boundaries."
+            element_size = element_size_in_bits // parent_addressable_unit
+            element_view_type, element_view_parameter_types, element_view_parameters = (
+                _get_cpp_view_type_for_physical_type(
+                    base_type,
+                    element_size_in_bits,
+                    byte_order,
+                    ir,
+                    _offset_storage_adapter(buffer_type, element_size, 0),
+                    parent_addressable_unit,
+                    validator,
+                )
             )
-        )
-        return (
-            code_template.format_template(
-                _TEMPLATES.array_view_adapter,
-                support_namespace=_SUPPORT_NAMESPACE,
-                # TODO(bolms): The element size should be calculable from the field
-                # size and array length.
-                element_view_type=element_view_type,
-                element_view_parameter_types="".join(
-                    ", " + p for p in element_view_parameter_types
+            return (
+                code_template.format_template(
+                    _TEMPLATES.array_view_adapter,
+                    support_namespace=_SUPPORT_NAMESPACE,
+                    # TODO(bolms): The element size should be calculable from the field
+                    # size and array length.
+                    element_view_type=element_view_type,
+                    element_view_parameter_types="".join(
+                        ", " + p for p in element_view_parameter_types
+                    ),
+                    element_size=element_size,
+                    addressable_unit_size=int(parent_addressable_unit),
+                    buffer_type=buffer_type,
                 ),
-                element_size=element_size,
-                addressable_unit_size=int(parent_addressable_unit),
-                buffer_type=buffer_type,
-            ),
-            element_view_parameter_types,
-            element_view_parameters,
-        )
+                element_view_parameter_types,
+                element_view_parameters,
+            )
+        else:
+            # Dynamic-size elements: use GenericDynamicSizeArrayView
+            # Only byte-oriented types are supported for dynamic arrays
+            assert (
+                parent_addressable_unit == 8
+            ), "Dynamic-size arrays are only supported in byte-oriented structures."
+            element_view_type, element_view_parameter_types, element_view_parameters = (
+                _get_cpp_view_type_for_physical_type(
+                    base_type,
+                    None,  # Size is not known at compile time
+                    byte_order,
+                    ir,
+                    _offset_storage_adapter(buffer_type, 1, 0),
+                    parent_addressable_unit,
+                    validator,
+                )
+            )
+            # Add element count as an extra constructor argument (not a template param)
+            # The element_count goes after element view params but before the buffer
+            # We add it as an extra parameter expression
+            all_parameters = list(element_view_parameters) + [
+                type_ir.array_type.element_count
+            ]
+            # Also add the parameter type for proper rendering
+            all_parameter_types = list(element_view_parameter_types) + ["::std::size_t"]
+            return (
+                code_template.format_template(
+                    _TEMPLATES.dynamic_size_array_view_adapter,
+                    support_namespace=_SUPPORT_NAMESPACE,
+                    element_view_type=element_view_type,
+                    # Only element view parameter types go in template args
+                    element_view_parameter_types="".join(
+                        ", " + p for p in element_view_parameter_types
+                    ),
+                    addressable_unit_size=int(parent_addressable_unit),
+                    buffer_type=buffer_type,
+                ),
+                # But ALL parameter types (including element_count) for constructor
+                all_parameter_types,
+                all_parameters,
+            )
     else:
         assert type_ir.has_field("atomic_type")
         reference = type_ir.atomic_type.reference

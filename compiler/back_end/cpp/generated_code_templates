@@ -475,6 +475,12 @@ ${support_namespace}::GenericArrayView<
     ${addressable_unit_size} ${element_view_parameter_types}>
 
 
+// ** dynamic_size_array_view_adapter ** ///////////////////////////////////////
+${support_namespace}::GenericDynamicSizeArrayView<
+    typename ${element_view_type}, typename ${buffer_type},
+    ${addressable_unit_size}${element_view_parameter_types}>
+
+
 // ** structure_field_validator ** /////////////////////////////////////////////
 struct ${name} {
   template <typename ValueType>

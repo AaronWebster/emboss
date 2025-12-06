@@ -120,7 +120,7 @@ class ConstraintsTest(unittest.TestCase):
     def test_error_non_constant_inner_array_dimensions(self):
         ir = _make_ir_from_emb(
             "struct Foo:\n"
-            "  0 [+1]  Bar[1]  one_byte\n"
+            "  0 [+1]  Bar[]  one_byte\n"
             # There is no dynamically-sized byte-oriented type in
             # the Prelude, so this test has to make its own.
             "external Bar:\n"
@@ -134,18 +134,30 @@ class ConstraintsTest(unittest.TestCase):
                     error.error(
                         "m.emb",
                         error_array.base_type.atomic_type.source_location,
-                        "Array elements must be fixed size.",
+                        "Arrays with automatic size must have fixed-size elements.",
                     )
                 ]
             ],
             error.filter_errors(constraints.check_constraints(ir)),
         )
 
-    def test_error_dynamically_sized_array_elements(self):
+    def test_no_error_dynamically_sized_array_elements_with_explicit_count(self):
+        # Arrays with explicit element count can have dynamically-sized elements.
         ir = _make_ir_from_emb(
             '[$default byte_order: "LittleEndian"]\n'
             "struct Foo:\n"
-            "  0 [+1]  Bar[1]  bar\n"
+            "  0 [+10]  Bar[1]  bar\n"
+            "struct Bar:\n"
+            "  0 [+1]     UInt      size\n"
+            "  1 [+size]  UInt:8[]  payload\n"
+        )
+        self.assertEqual([], error.filter_errors(constraints.check_constraints(ir)))
+
+    def test_error_dynamically_sized_array_elements_with_automatic_size(self):
+        ir = _make_ir_from_emb(
+            '[$default byte_order: "LittleEndian"]\n'
+            "struct Foo:\n"
+            "  0 [+10]  Bar[]  bar\n"
             "struct Bar:\n"
             "  0 [+1]     UInt      size\n"
             "  1 [+size]  UInt:8[]  payload\n"
@@ -157,7 +169,7 @@ class ConstraintsTest(unittest.TestCase):
                     error.error(
                         "m.emb",
                         error_array.base_type.atomic_type.source_location,
-                        "Array elements must be fixed size.",
+                        "Arrays with automatic size must have fixed-size elements.",
                     )
                 ]
             ],

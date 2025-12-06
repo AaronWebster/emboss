@@ -364,6 +364,159 @@ class GenericArrayView final {
   BufferType buffer_;
 };
 
+// View for an array in a structure where element sizes are not known at
+// compile time (dynamic-size arrays).
+//
+// ElementView should be the view class for a single array element. The element
+// view type must satisfy the following interface requirements:
+//   - SizeInBytes(): Returns the size of the element in bytes
+//   - SizeIsKnown(): Returns true if the element's size can be determined
+//   - Ok(): Returns true if the element is valid
+//
+// BufferType is the storage type that will be passed into the array.
+//
+// kAddressableUnitSize is the size of a single addressable unit.  It should be
+// 8 (one byte) for dynamic-size arrays.
+//
+// ElementViewParameterTypes is a list of the types of parameters which must be
+// passed down to each element of the array.  ElementViewParameterTypes can be
+// empty.
+template <class ElementView, class BufferType,
+          ::std::size_t kAddressableUnitSize,
+          typename... ElementViewParameterTypes>
+class GenericDynamicSizeArrayView final {
+ public:
+  using ViewType = ElementView;
+
+  GenericDynamicSizeArrayView() : buffer_(), element_count_(0) {}
+  explicit GenericDynamicSizeArrayView(
+      const ElementViewParameterTypes &...parameters,
+      ::std::size_t element_count, BufferType buffer)
+      : parameters_{parameters...},
+        buffer_{buffer},
+        element_count_(element_count) {}
+
+  // Returns the element at the given index by computing the offset from
+  // previous elements' sizes.
+  ElementView operator[](::std::size_t index) const {
+    ::std::size_t offset = 0;
+    for (::std::size_t i = 0; i < index; ++i) {
+      ElementView element = ConstructElementAtOffset(offset);
+      if (!element.SizeIsKnown()) {
+        // Return an invalid view if we can't determine previous element sizes
+        return ElementView();
+      }
+      offset += element.SizeInBytes();
+    }
+    return ConstructElementAtOffset(offset);
+  }
+
+  ::std::size_t ElementCount() const { return element_count_; }
+
+  template <int N = 0>
+  typename ::std::enable_if<((void)N, kAddressableUnitSize == 8),
+                            ::std::size_t>::type
+  SizeInBytes() const {
+    return buffer_.SizeInBytes();
+  }
+
+  bool Ok() const {
+    if (!buffer_.Ok()) return false;
+    ::std::size_t offset = 0;
+    for (::std::size_t i = 0; i < element_count_; ++i) {
+      ElementView element = ConstructElementAtOffset(offset);
+      if (!element.Ok()) return false;
+      if (!element.SizeIsKnown()) return false;
+      offset += element.SizeInBytes();
+    }
+    // Check that total element sizes don't exceed buffer size
+    return offset <= buffer_.SizeInBytes();
+  }
+
+  template <class OtherElementView, class OtherBufferType>
+  bool Equals(
+      const GenericDynamicSizeArrayView<OtherElementView, OtherBufferType,
+                                        kAddressableUnitSize> &other) const {
+    if (ElementCount() != other.ElementCount()) return false;
+    for (::std::size_t i = 0; i < ElementCount(); ++i) {
+      if (!(*this)[i].Equals(other[i])) return false;
+    }
+    return true;
+  }
+
+  template <class OtherElementView, class OtherBufferType>
+  bool UncheckedEquals(
+      const GenericDynamicSizeArrayView<OtherElementView, OtherBufferType,
+                                        kAddressableUnitSize> &other) const {
+    if (ElementCount() != other.ElementCount()) return false;
+    for (::std::size_t i = 0; i < ElementCount(); ++i) {
+      if (!(*this)[i].UncheckedEquals(other[i])) return false;
+    }
+    return true;
+  }
+
+  bool IsComplete() const { return buffer_.Ok(); }
+
+  template <class Stream>
+  bool UpdateFromTextStream(Stream *stream) const {
+    return ReadArrayFromTextStream(this, stream);
+  }
+
+  template <class Stream>
+  void WriteToTextStream(Stream *stream,
+                         const TextOutputOptions &options) const {
+    WriteArrayToTextStream(this, stream, options);
+  }
+
+  static constexpr bool IsAggregate() { return true; }
+
+  BufferType BackingStorage() const { return buffer_; }
+
+  bool operator==(const GenericDynamicSizeArrayView &other) const {
+    return parameters_ == other.parameters_ && buffer_ == other.buffer_ &&
+           element_count_ == other.element_count_;
+  }
+
+ private:
+  ElementView ConstructElementAtOffset(::std::size_t offset) const {
+    return ConstructElementAtOffsetHelper<(sizeof...(ElementViewParameterTypes)
+                                           == 0)>::Construct(parameters_,
+                                                             buffer_, offset);
+  }
+
+  // Helper to expand parameters tuple into individual constructor arguments.
+  template <bool, ::std::size_t... N>
+  struct ConstructElementAtOffsetHelper {
+    static ElementView Construct(
+        const ::std::tuple<ElementViewParameterTypes...> &parameters,
+        BufferType buffer, ::std::size_t offset) {
+      return ConstructElementAtOffsetHelper<
+          (sizeof...(ElementViewParameterTypes) == 1 + sizeof...(N)), N...,
+          sizeof...(N)>::Construct(parameters, buffer, offset);
+    }
+  };
+
+  template </**/ ::std::size_t... N>
+  struct ConstructElementAtOffsetHelper<true, N...> {
+    static ElementView Construct(
+        const ::std::tuple<ElementViewParameterTypes...> &parameters,
+        BufferType buffer, ::std::size_t offset) {
+      if (offset > buffer.SizeInBytes()) {
+        // Offset is past the end of the buffer
+        return ElementView();
+      }
+      ::std::size_t remaining = buffer.SizeInBytes() - offset;
+      return ElementView(
+          ::std::get<N>(parameters)...,
+          buffer.template GetOffsetStorage<1, 0>(offset, remaining));
+    }
+  };
+
+  ::std::tuple<ElementViewParameterTypes...> parameters_;
+  BufferType buffer_;
+  ::std::size_t element_count_;
+};
+
 // Optionally prints a shorthand representation of a BitArray in a comment.
 template <class ElementView, class BufferType, ::std::size_t kElementSize,
           ::std::size_t kAddressableUnitSize, class Stream>
