@@ -21,25 +21,11 @@
 
 set -e
 
-# Find the black binary in the runfiles
 SCRIPT_DIR="$(dirname "$0")"
-BLACK_BIN="$SCRIPT_DIR/black/black"
+source "$SCRIPT_DIR/black_common.sh"
 
-# Try to find black in different possible locations
-if [[ ! -x "$BLACK_BIN" ]]; then
-    BLACK_BIN="$SCRIPT_DIR/../pip/bin/black/black"
-fi
-
-if [[ ! -x "$BLACK_BIN" ]]; then
-    # Search for black in runfiles
-    BLACK_BIN="$(find "$RUNFILES_DIR" -name "black" -type f -executable 2>/dev/null | head -1)"
-fi
-
-if [[ -z "$BLACK_BIN" ]] || [[ ! -x "$BLACK_BIN" ]]; then
-    echo "Error: Could not find black binary" >&2
-    echo "Looked in: $SCRIPT_DIR/black/black" >&2
-    exit 1
-fi
+# Find the black binary
+find_black "$SCRIPT_DIR" || exit 1
 
 # Change to the workspace directory (BUILD_WORKSPACE_DIRECTORY is set by bazel run)
 if [[ -n "$BUILD_WORKSPACE_DIRECTORY" ]]; then

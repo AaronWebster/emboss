@@ -34,7 +34,10 @@ alias(
 sh_binary(
     name = "black_fix",
     srcs = ["scripts/black_fix.sh"],
-    data = [":black"],
+    data = [
+        ":black",
+        "scripts/black_common.sh",
+    ],
 )
 
 # Target to check Python formatting.
@@ -43,5 +46,8 @@ sh_binary(
 sh_binary(
     name = "black_check",
     srcs = ["scripts/black_check.sh"],
-    data = [":black"],
+    data = [
+        ":black",
+        "scripts/black_common.sh",
+    ],
 )
