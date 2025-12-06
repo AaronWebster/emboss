@@ -27,6 +27,7 @@ class OneGoldenTest(unittest.TestCase):
         emb_file,
         golden_file,
         include_dirs=None,
+        enable_enum_traits=True,
     ):
         super(OneGoldenTest, self).__init__("test_golden_file")
         self.emboss_front_end = emboss_front_end
@@ -34,6 +35,7 @@ class OneGoldenTest(unittest.TestCase):
         self.emb_file = emb_file
         self.golden_file = golden_file
         self.include_dirs = include_dirs if include_dirs is not None else []
+        self.enable_enum_traits = enable_enum_traits
 
     def test_golden_file(self):
         temp_dir = os.environ.get("TEST_TMPDIR", "")
@@ -61,6 +63,8 @@ class OneGoldenTest(unittest.TestCase):
             "--output-file",
             output_path,
         ]
+        if not self.enable_enum_traits:
+            compiler_args.append("--no-cc-enum-traits")
 
         process = subprocess.run(compiler_args, capture_output=True, text=True)
 
