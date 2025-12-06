@@ -129,6 +129,9 @@ struct ProductOperation {
 struct FlooredDivisionOperation {
   template <typename T>
   static inline constexpr T Do(T dividend, T divisor) {
+    // Handle division by zero by returning 0 to avoid undefined behavior.
+    // The caller should use Maybe wrappers that check for validity.
+    if (divisor == 0) return 0;
     // For signed types, C++ division truncates toward zero, but we want to
     // floor toward negative infinity.
     // The adjustment is needed when the signs differ and there's a remainder.
@@ -148,6 +151,9 @@ struct FlooredDivisionOperation {
 struct FlooredModulusOperation {
   template <typename T>
   static inline constexpr T Do(T dividend, T divisor) {
+    // Handle modulus by zero by returning 0 to avoid undefined behavior.
+    // The caller should use Maybe wrappers that check for validity.
+    if (divisor == 0) return 0;
     T remainder = dividend % divisor;
     // If remainder is non-zero and signs differ, adjust to match divisor's sign
     return remainder + (remainder != 0 && ((dividend < 0) != (divisor < 0)) ? divisor : 0);

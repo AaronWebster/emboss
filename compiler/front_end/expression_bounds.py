@@ -711,8 +711,8 @@ def _compute_constraints_of_modulus_operator(expression):
         expression.type.integer.modular_value = "0"
         return
 
-    result_min = 0
-    result_max = 0
+    result_min = "0"
+    result_max = "0"
 
     if has_positive_divisor:
         # Positive divisor means result in [0, divisor-1]
@@ -720,8 +720,8 @@ def _compute_constraints_of_modulus_operator(expression):
         if _is_infinite(rmax):
             result_max = "infinity"
         else:
-            result_max = max(result_max, rmax_val - 1)
-        result_min = 0
+            result_max = str(rmax_val - 1)
+        result_min = "0"
 
     if has_negative_divisor:
         # Negative divisor means result in [divisor+1, 0]
@@ -729,12 +729,12 @@ def _compute_constraints_of_modulus_operator(expression):
         if _is_infinite(rmin):
             result_min = "-infinity"
         else:
-            result_min = min(result_min, rmin_val + 1)
+            result_min = str(rmin_val + 1)
         if not has_positive_divisor:
-            result_max = 0
+            result_max = "0"
 
-    expression.type.integer.minimum_value = str(result_min)
-    expression.type.integer.maximum_value = str(result_max)
+    expression.type.integer.minimum_value = result_min
+    expression.type.integer.maximum_value = result_max
 
     # For modular arithmetic, use conservative bounds
     expression.type.integer.modulus = "1"
