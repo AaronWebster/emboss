@@ -3882,6 +3882,92 @@ enum Foo:
   ]
 }
 
+===
+division and modulus operators
+---
+struct Foo:
+  0 [+1]  UInt  size
+  let div_result = 10 / 3
+  let mod_result = 10 % 3
+  let compound = (size * 4) / 2 % 3
+---
+{
+  "type": [
+    {
+      "structure": {
+        "field": [
+          {
+            "name": { "name": { "text": "size" } },
+            "location": {
+              "start": { "constant": { "value": "0" } },
+              "size": { "constant": { "value": "1" } }
+            }
+          },
+          {
+            "name": { "name": { "text": "div_result" } },
+            "read_transform": {
+              "function": {
+                "function": "DIVISION",
+                "function_name": { "text": "/" },
+                "args": [
+                  { "constant": { "value": "10" } },
+                  { "constant": { "value": "3" } }
+                ]
+              }
+            }
+          },
+          {
+            "name": { "name": { "text": "mod_result" } },
+            "read_transform": {
+              "function": {
+                "function": "MODULUS",
+                "function_name": { "text": "%" },
+                "args": [
+                  { "constant": { "value": "10" } },
+                  { "constant": { "value": "3" } }
+                ]
+              }
+            }
+          },
+          {
+            "name": { "name": { "text": "compound" } },
+            "read_transform": {
+              "function": {
+                "function": "MODULUS",
+                "args": [
+                  {
+                    "function": {
+                      "function": "DIVISION",
+                      "args": [
+                        {
+                          "function": {
+                            "function": "MULTIPLICATION",
+                            "args": [
+                              {
+                                "field_reference": {
+                                  "path": [ { "source_name": [ { "text": "size" } ] } ]
+                                }
+                              },
+                              { "constant": { "value": "4" } }
+                            ]
+                          }
+                        },
+                        { "constant": { "value": "2" } }
+                      ]
+                    }
+                  },
+                  { "constant": { "value": "3" } }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "name": { "name": { "text": "Foo" } }
+    }
+  ]
+}
+
 """
 
 

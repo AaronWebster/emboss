@@ -193,6 +193,8 @@ def _constant_value_of_function(function, bindings):
         ir_data.FunctionMapping.ADDITION: operator.add,
         ir_data.FunctionMapping.SUBTRACTION: operator.sub,
         ir_data.FunctionMapping.MULTIPLICATION: operator.mul,
+        ir_data.FunctionMapping.DIVISION: operator.floordiv,
+        ir_data.FunctionMapping.MODULUS: operator.mod,
         ir_data.FunctionMapping.EQUALITY: operator.eq,
         ir_data.FunctionMapping.INEQUALITY: operator.ne,
         ir_data.FunctionMapping.LESS: operator.lt,

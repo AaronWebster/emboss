@@ -93,6 +93,10 @@ def _compute_constraints_of_function(expression, ir):
         _compute_constraints_of_additive_operator(expression)
     elif op == ir_data.FunctionMapping.MULTIPLICATION:
         _compute_constraints_of_multiplicative_operator(expression)
+    elif op == ir_data.FunctionMapping.DIVISION:
+        _compute_constraints_of_division_operator(expression)
+    elif op == ir_data.FunctionMapping.MODULUS:
+        _compute_constraints_of_modulus_operator(expression)
     elif op in (
         ir_data.FunctionMapping.EQUALITY,
         ir_data.FunctionMapping.INEQUALITY,
@@ -486,6 +490,257 @@ def _compute_constraints_of_multiplicative_operator(expression):
     )
 
 
+def _floored_div(a, b):
+    """Computes floored integer division of a by b.
+
+    Integer division in Emboss uses floored division (round toward -infinity),
+    which matches Python's // operator behavior. This differs from truncated
+    division (round toward zero) used by C/C++.
+
+    For example:
+        7 / 3 = 2       (both agree)
+        -7 / 3 = -3     (floored) vs -2 (truncated)
+        7 / -3 = -3     (floored) vs -2 (truncated)
+        -7 / -3 = 2     (both agree)
+
+    Arguments:
+        a: Dividend (int, "infinity", or "-infinity")
+        b: Divisor (int, "infinity", or "-infinity")
+
+    Returns:
+        Floored division result (int, "infinity", "-infinity", or 0 for infinity/infinity)
+    """
+    if b == 0:
+        # Division by zero - this shouldn't happen in well-formed expressions
+        # but we handle it by returning infinity to avoid crashes
+        if _sign(a) >= 0:
+            return "infinity"
+        else:
+            return "-infinity"
+
+    if _is_infinite(a) and _is_infinite(b):
+        # infinity / infinity is indeterminate, but for bounds we use 0
+        return 0
+
+    if _is_infinite(a):
+        # infinity / finite = infinity (with sign)
+        # -infinity / finite = -infinity (with sign)
+        sign = _sign(a) * _sign(b)
+        if sign > 0:
+            return "infinity"
+        else:
+            return "-infinity"
+
+    if _is_infinite(b):
+        # finite / infinity = 0
+        return 0
+
+    # Both are finite - use Python's floor division
+    return int(a) // int(b)
+
+
+def _compute_constraints_of_division_operator(expression):
+    """Computes the constraints of a floored division expression (a / b).
+
+    Emboss uses floored division (round toward negative infinity), which matches
+    Python's // operator. This is important for the modulus operation to satisfy
+    the identity: a == (a / b) * b + (a % b)
+
+    For constant operands, we compute the exact result.
+    For non-constant operands, we compute conservative bounds.
+    """
+    bounds = [arg.type.integer for arg in expression.function.args]
+    lmin, lmax = bounds[0].minimum_value, bounds[0].maximum_value
+    rmin, rmax = bounds[1].minimum_value, bounds[1].maximum_value
+
+    # If both sides are constant, the result is constant
+    if all(bound.modulus == "infinity" for bound in bounds):
+        dividend = int(bounds[0].modular_value)
+        divisor = int(bounds[1].modular_value)
+        if divisor == 0:
+            # Division by constant zero - this is an error case
+            # Set infinite bounds which will trigger an error in constraints check
+            expression.type.integer.minimum_value = "-infinity"
+            expression.type.integer.maximum_value = "infinity"
+            expression.type.integer.modulus = "1"
+            expression.type.integer.modular_value = "0"
+            return
+        result = dividend // divisor  # Python's floor division
+        expression.type.integer.modulus = "infinity"
+        expression.type.integer.modular_value = str(result)
+        expression.type.integer.minimum_value = str(result)
+        expression.type.integer.maximum_value = str(result)
+        return
+
+    # For non-constant operands, we need to compute bounds.
+    # If the divisor range includes zero, we compute bounds as if zero were
+    # excluded, since division by zero at runtime will make the expression
+    # not "Ok()".
+
+    # Get divisor bounds, excluding zero if present
+    rmin_val = int(rmin) if not _is_infinite(rmin) else None
+    rmax_val = int(rmax) if not _is_infinite(rmax) else None
+
+    # Build lists of divisor values to consider (excluding zero)
+    divisor_extrema = []
+    if rmin_val is not None:
+        if rmin_val != 0:
+            divisor_extrema.append(rmin_val)
+        elif rmin_val == 0 and rmax_val is not None and rmax_val > 0:
+            # Range is [0, rmax], so effective minimum positive divisor is 1
+            divisor_extrema.append(1)
+    if rmax_val is not None:
+        if rmax_val != 0:
+            divisor_extrema.append(rmax_val)
+        elif rmax_val == 0 and rmin_val is not None and rmin_val < 0:
+            # Range is [rmin, 0], so effective maximum negative divisor is -1
+            divisor_extrema.append(-1)
+
+    # If divisor is all zero or infinite, we can't compute bounds
+    if not divisor_extrema and _is_infinite(rmin) and _is_infinite(rmax):
+        expression.type.integer.minimum_value = "-infinity"
+        expression.type.integer.maximum_value = "infinity"
+        expression.type.integer.modulus = "1"
+        expression.type.integer.modular_value = "0"
+        return
+
+    # Compute extrema from all corner cases
+    extrema = []
+
+    # Get concrete values for dividend bounds
+    lmin_val = int(lmin) if not _is_infinite(lmin) else None
+    lmax_val = int(lmax) if not _is_infinite(lmax) else None
+
+    # Compute corners
+    for l_val in [lmin_val, lmax_val]:
+        if l_val is not None:
+            for r_val in divisor_extrema:
+                extrema.append(_floored_div(l_val, r_val))
+
+    # Handle infinite dividend bounds with finite divisor
+    if _is_infinite(lmin):
+        for r_val in divisor_extrema:
+            if r_val > 0:
+                extrema.append("-infinity")
+            elif r_val < 0:
+                extrema.append("infinity")
+    if _is_infinite(lmax):
+        for r_val in divisor_extrema:
+            if r_val > 0:
+                extrema.append("infinity")
+            elif r_val < 0:
+                extrema.append("-infinity")
+
+    # Handle infinite divisor bounds with finite dividend
+    if _is_infinite(rmin) or _is_infinite(rmax):
+        # finite / infinity = 0, so include 0 in extrema
+        if lmin_val is not None or lmax_val is not None:
+            extrema.append(0)
+
+    if not extrema:
+        # All bounds are infinite - use conservative bounds
+        expression.type.integer.minimum_value = "-infinity"
+        expression.type.integer.maximum_value = "infinity"
+    else:
+        expression.type.integer.minimum_value = str(_min(extrema))
+        expression.type.integer.maximum_value = str(_max(extrema))
+
+    # For modular arithmetic with division, we lose precision.
+    # The result modulus is 1 (we can't say much about the modular value).
+    expression.type.integer.modulus = "1"
+    expression.type.integer.modular_value = "0"
+
+
+def _compute_constraints_of_modulus_operator(expression):
+    """Computes the constraints of a modulus expression (a % b).
+
+    The modulus operation in Emboss follows the floored division convention,
+    matching Python's % operator. This means the result always has the same
+    sign as the divisor (when non-zero).
+
+    The identity: a == (a / b) * b + (a % b) holds.
+
+    For positive b: 0 <= (a % b) < b
+    For negative b: b < (a % b) <= 0
+    """
+    bounds = [arg.type.integer for arg in expression.function.args]
+    lmin, lmax = bounds[0].minimum_value, bounds[0].maximum_value
+    rmin, rmax = bounds[1].minimum_value, bounds[1].maximum_value
+
+    # If both sides are constant, the result is constant
+    if all(bound.modulus == "infinity" for bound in bounds):
+        dividend = int(bounds[0].modular_value)
+        divisor = int(bounds[1].modular_value)
+        if divisor == 0:
+            # Modulus by constant zero - this is an error case
+            expression.type.integer.minimum_value = "-infinity"
+            expression.type.integer.maximum_value = "infinity"
+            expression.type.integer.modulus = "1"
+            expression.type.integer.modular_value = "0"
+            return
+        result = dividend % divisor  # Python's modulus (follows floor division)
+        expression.type.integer.modulus = "infinity"
+        expression.type.integer.modular_value = str(result)
+        expression.type.integer.minimum_value = str(result)
+        expression.type.integer.maximum_value = str(result)
+        return
+
+    # For non-constant operands, compute conservative bounds.
+    # Similar to division, if divisor range includes zero, we compute bounds
+    # as if zero were excluded.
+
+    # Get divisor bounds
+    rmin_val = int(rmin) if not _is_infinite(rmin) else None
+    rmax_val = int(rmax) if not _is_infinite(rmax) else None
+
+    # For modulus with non-zero divisor:
+    # If divisor is always positive: 0 <= result < max(|divisor|)
+    # If divisor is always negative: min(divisor) < result <= 0
+    # If divisor can be positive or negative, result spans both ranges.
+
+    # Determine the effective divisor range, excluding zero
+    has_positive_divisor = rmax_val is not None and rmax_val > 0
+    has_negative_divisor = rmin_val is not None and rmin_val < 0
+    has_only_zero = (rmin_val == 0 and rmax_val == 0)
+
+    if has_only_zero or (_is_infinite(rmin) and _is_infinite(rmax)):
+        # Divisor is only zero or infinite - result is unbounded
+        expression.type.integer.minimum_value = "-infinity"
+        expression.type.integer.maximum_value = "infinity"
+        expression.type.integer.modulus = "1"
+        expression.type.integer.modular_value = "0"
+        return
+
+    result_min = 0
+    result_max = 0
+
+    if has_positive_divisor:
+        # Positive divisor means result in [0, divisor-1]
+        # Maximum positive divisor gives maximum positive result
+        if _is_infinite(rmax):
+            result_max = "infinity"
+        else:
+            result_max = max(result_max, rmax_val - 1)
+        result_min = 0
+
+    if has_negative_divisor:
+        # Negative divisor means result in [divisor+1, 0]
+        # Minimum negative divisor gives minimum negative result
+        if _is_infinite(rmin):
+            result_min = "-infinity"
+        else:
+            result_min = min(result_min, rmin_val + 1)
+        if not has_positive_divisor:
+            result_max = 0
+
+    expression.type.integer.minimum_value = str(result_min)
+    expression.type.integer.maximum_value = str(result_max)
+
+    # For modular arithmetic, use conservative bounds
+    expression.type.integer.modulus = "1"
+    expression.type.integer.modular_value = "0"
+
+
 def _assert_integer_constraints(expression):
     """Asserts that the integer bounds of expression are self-consistent.
 
@@ -516,12 +771,12 @@ def _assert_integer_constraints(expression):
     if bounds.maximum_value != "infinity":
         assert int(bounds.maximum_value) % modulus == int(bounds.modular_value)
     if bounds.minimum_value == bounds.maximum_value:
-        # TODO(bolms): I believe there are situations using the not-yet-implemented
-        # integer division operator that would trigger these asserts, so they should
-        # be turned into assignments (with corresponding tests) when implementing
-        # division.
-        assert bounds.modular_value == bounds.minimum_value
-        assert bounds.modulus == "infinity"
+        # When min == max but modulus is not infinity, this can happen with
+        # division or modulus operators where we compute a constant result
+        # but use a modulus of 1 for simplicity. In this case, we upgrade
+        # the bounds to be a true constant.
+        bounds.modular_value = bounds.minimum_value
+        bounds.modulus = "infinity"
     if bounds.minimum_value != "-infinity" and bounds.maximum_value != "infinity":
         assert int(bounds.minimum_value) <= int(bounds.maximum_value)
 

@@ -364,7 +364,7 @@ def _make_bad_char_tests():
 
         return test_case
 
-    for c in "~`!@%^&\\|;'\"/{}":
+    for c in "~`!@^&\\|;'\"{}":
         setattr(TokenizerTest, "testBadChar{!r}".format(c), make_test_case(c))
 
 
