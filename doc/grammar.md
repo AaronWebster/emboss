@@ -86,7 +86,9 @@ times-expression                       -> negation-expression
                                           times-expression-right*
 times-expression-right                 -> multiplicative-operator
                                           negation-expression
-multiplicative-operator                -> "*"
+multiplicative-operator                -> "%"
+                                        | "*"
+                                        | "/"
 negation-expression                    -> additive-operator bottom-expression
                                         | bottom-expression
 bottom-expression                      -> "(" expression ")"
@@ -333,6 +335,8 @@ Pattern                                    | Symbol
 `\+`                                       | `"+"`
 `\-`                                       | `"-"`
 `\*`                                       | `"*"`
+`\/`                                       | `"/"`
+`\%`                                       | `"%"`
 `\.`                                       | `"."`
 `\?`                                       | `"?"`
 `\=\=`                                     | `"=="`

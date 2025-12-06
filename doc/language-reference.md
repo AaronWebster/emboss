@@ -1179,7 +1179,7 @@ binding):
 
 1.  `()` `$max()` `$present()` `$upper_bound()` `$lower_bound()`
 2.  unary `+` and `-` ([see note 1](#note-1-unary-plusminus-precedence))
-3.  `*`
+3.  `*` `/` `%`
 4.  `+` `-`
 5.  `<` `>` `==` `!=` `>=` `<=` ([see note 2](#note-2-chained-and-mixed-comparisons))
 6.  `&&` `||` ([see note 3](#note-3-logical-andor-precedence))
@@ -1398,6 +1398,44 @@ Unary `+` and `-` require an integer argument, and return an integer result.
 ```
 
 The `*` operator requires two integer arguments, and returns an integer.
+
+
+##### `/`
+
+`/` is the floored integer division operator:
+
+```
+10 / 3 == 3
+-10 / 3 == -4
+10 / -3 == -4
+-10 / -3 == 3
+```
+
+The `/` operator performs floored division (round toward negative infinity),
+which differs from truncated division (round toward zero) used in C/C++. This
+ensures that the identity `a == (a / b) * b + (a % b)` always holds.
+
+The `/` operator requires two integer arguments, and returns an integer.
+Division by zero at runtime will cause the expression to not be "Ok()".
+
+
+##### `%`
+
+`%` is the floored modulus operator:
+
+```
+10 % 3 == 1
+-10 % 3 == 2
+10 % -3 == -2
+-10 % -3 == -1
+```
+
+The `%` operator returns the remainder after floored division. The result
+always has the same sign as the divisor (when non-zero), which matches Python's
+`%` operator behavior.
+
+The `%` operator requires two integer arguments, and returns an integer.
+Modulus by zero at runtime will cause the expression to not be "Ok()".
 
 
 ##### `+` and `-`
