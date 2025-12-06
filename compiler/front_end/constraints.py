@@ -490,7 +490,7 @@ def _check_allowed_in_bits(type_ir, type_definition, source_file_name, ir, error
 
 
 def _check_size_of_bits(type_ir, type_definition, source_file_name, errors):
-    """Checks that `bits` types are fixed size, less than 64 bits."""
+    """Checks that `bits` types are fixed size."""
     del type_ir  # Unused
     if type_definition.addressable_unit != ir_data.AddressableUnit.BIT:
         return
@@ -508,16 +508,9 @@ def _check_size_of_bits(type_ir, type_definition, source_file_name, errors):
             ]
         )
         return
-    if fixed_size > 64:
-        errors.append(
-            [
-                error.error(
-                    source_file_name,
-                    type_definition.source_location,
-                    "`bits` types must be 64 bits or smaller.",
-                )
-            ]
-        )
+    # Note: We allow bits types wider than 64 bits. Individual integer fields
+    # within the bits type are still limited to 64 bits by the type constraints
+    # in prelude.emb (UInt, Int, Bcd are all limited to 64 bits).
 
 
 _RESERVED_WORDS = None

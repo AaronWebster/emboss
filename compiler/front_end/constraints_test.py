@@ -1010,23 +1010,16 @@ class ConstraintsTest(unittest.TestCase):
             error.filter_errors(constraints.check_constraints(ir)),
         )
 
-    def test_bits_must_be_small(self):
+    def test_wide_bits_allowed(self):
+        # bits types wider than 64 bits are allowed as long as they're
+        # fixed size. Individual fields are still limited to 64 bits.
         ir = _make_ir_from_emb(
-            "bits Big:\n" "  0  [+64]  UInt  x\n" "  64 [+1]   UInt  y\n"
+            "bits WideBits:\n"
+            "  0   [+64]  UInt  first_64\n"
+            "  64  [+64]  UInt  second_64\n"
+            "  128 [+64]  UInt  third_64\n"
         )
-        error_type = ir.module[0].type[0]
-        self.assertEqual(
-            [
-                [
-                    error.error(
-                        "m.emb",
-                        error_type.source_location,
-                        "`bits` types must be 64 bits or smaller.",
-                    )
-                ]
-            ],
-            error.filter_errors(constraints.check_constraints(ir)),
-        )
+        self.assertEqual([], error.filter_errors(constraints.check_constraints(ir)))
 
     def test_constant_expressions_must_be_small(self):
         ir = _make_ir_from_emb(
