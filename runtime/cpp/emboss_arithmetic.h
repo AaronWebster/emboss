@@ -117,6 +117,49 @@ struct ProductOperation {
   }
 };
 
+// FlooredDivisionOperation implements floor division (round toward -infinity).
+// This matches Python's // operator, and ensures the identity:
+//   a == (a / b) * b + (a % b)
+// holds for the FlooredModulusOperation below.
+//
+// For positive divisors, this is equivalent to truncated division when the
+// dividend is non-negative, but differs for negative dividends:
+//   7 / 3 = 2 (both truncated and floored)
+//   -7 / 3 = -3 (floored) vs -2 (truncated)
+struct FlooredDivisionOperation {
+  template <typename T>
+  static inline constexpr T Do(T dividend, T divisor) {
+    // Handle division by zero by returning 0 to avoid undefined behavior.
+    // The caller should use Maybe wrappers that check for validity.
+    if (divisor == 0) return 0;
+    // For signed types, C++ division truncates toward zero, but we want to
+    // floor toward negative infinity.
+    // The adjustment is needed when the signs differ and there's a remainder.
+    T quotient = dividend / divisor;
+    T remainder = dividend % divisor;
+    // If remainder is non-zero and signs of dividend and divisor differ,
+    // we need to subtract 1 from the quotient to floor toward -infinity.
+    return quotient - (remainder != 0 && ((dividend < 0) != (divisor < 0)) ? 1 : 0);
+  }
+};
+
+// FlooredModulusOperation implements the modulus operation that corresponds to
+// floored division. The result always has the same sign as the divisor (when
+// non-zero), which matches Python's % operator.
+//
+// The identity a == (a / b) * b + (a % b) holds where / is floored division.
+struct FlooredModulusOperation {
+  template <typename T>
+  static inline constexpr T Do(T dividend, T divisor) {
+    // Handle modulus by zero by returning 0 to avoid undefined behavior.
+    // The caller should use Maybe wrappers that check for validity.
+    if (divisor == 0) return 0;
+    T remainder = dividend % divisor;
+    // If remainder is non-zero and signs differ, adjust to match divisor's sign
+    return remainder + (remainder != 0 && ((dividend < 0) != (divisor < 0)) ? divisor : 0);
+  }
+};
+
 // Assertions for the template types of comparisons.
 template <typename ResultT, typename LeftT, typename RightT>
 inline constexpr bool AssertComparisonInPartsTypes() {
@@ -338,6 +381,18 @@ template <typename IntermediateT, typename ResultT, typename LeftT,
           typename RightT>
 inline constexpr Maybe<ResultT> Product(Maybe<LeftT> l, Maybe<RightT> r) {
   return MaybeDo<IntermediateT, ResultT, ProductOperation, LeftT, RightT>(l, r);
+}
+
+template <typename IntermediateT, typename ResultT, typename LeftT,
+          typename RightT>
+inline constexpr Maybe<ResultT> FlooredDivision(Maybe<LeftT> l, Maybe<RightT> r) {
+  return MaybeDo<IntermediateT, ResultT, FlooredDivisionOperation, LeftT, RightT>(l, r);
+}
+
+template <typename IntermediateT, typename ResultT, typename LeftT,
+          typename RightT>
+inline constexpr Maybe<ResultT> FlooredModulus(Maybe<LeftT> l, Maybe<RightT> r) {
+  return MaybeDo<IntermediateT, ResultT, FlooredModulusOperation, LeftT, RightT>(l, r);
 }
 
 template <typename IntermediateT, typename ResultT, typename LeftT,

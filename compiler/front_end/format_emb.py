@@ -871,6 +871,8 @@ def _empty_string():
 @_formats("logical-expression -> comparison-expression")
 @_formats("logical-expression -> or-expression")
 @_formats('multiplicative-operator -> "*"')
+@_formats('multiplicative-operator -> "/"')
+@_formats('multiplicative-operator -> "%"')
 @_formats("negation-expression -> bottom-expression")
 @_formats("numeric-constant -> Number")
 @_formats('or-operator -> "||"')

@@ -196,6 +196,8 @@ def _text_to_operator(text):
         "+": ir_data.FunctionMapping.ADDITION,
         "-": ir_data.FunctionMapping.SUBTRACTION,
         "*": ir_data.FunctionMapping.MULTIPLICATION,
+        "/": ir_data.FunctionMapping.DIVISION,
+        "%": ir_data.FunctionMapping.MODULUS,
         "==": ir_data.FunctionMapping.EQUALITY,
         "!=": ir_data.FunctionMapping.INEQUALITY,
         "&&": ir_data.FunctionMapping.AND,
@@ -1415,6 +1417,8 @@ def _name(word):
 @_handles('additive-operator -> "+"')
 @_handles('additive-operator -> "-"')
 @_handles('multiplicative-operator -> "*"')
+@_handles('multiplicative-operator -> "/"')
+@_handles('multiplicative-operator -> "%"')
 @_handles('function-name -> "$max"')
 @_handles('function-name -> "$present"')
 @_handles('function-name -> "$upper_bound"')
