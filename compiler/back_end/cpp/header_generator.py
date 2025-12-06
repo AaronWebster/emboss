@@ -657,6 +657,10 @@ def _render_builtin_operation(expression, ir, field_reader, subexpressions):
         return field_reader.render_existence(
             expression.function.args[0], subexpressions
         )
+    if expression.function.function == ir_data.FunctionMapping.CRC:
+        return field_reader.render_crc(
+            expression.function.args[0], subexpressions
+        )
     args = expression.function.args
     rendered_args = [
         _render_expression(arg, ir, field_reader, subexpressions).rendered
@@ -745,6 +749,22 @@ class _FieldRenderer(object):
             prefix,
         )
 
+    def render_crc_with_context(self, expression, prefix, subexpressions):
+        field = prefix + _render_variable(
+            ir_util.hashable_form_of_field_reference(expression.field_reference)
+        )
+        if subexpressions is None:
+            field_expression = field
+        else:
+            field_expression = subexpressions.add(field)
+        return (
+            "({0}.Ok()"
+            "    ? {1}(::emboss::support::Crc32({0}))"
+            "    : {1}())".format(
+                field_expression, _maybe_type("::std::uint32_t")
+            )
+        )
+
 
 class _DirectFieldRenderer(_FieldRenderer):
     """Renderer for fields read from inside a structure's View type."""
@@ -754,6 +774,9 @@ class _DirectFieldRenderer(_FieldRenderer):
 
     def render_existence(self, expression, subexpressions):
         return self.render_existence_with_context(expression, "", subexpressions)
+
+    def render_crc(self, expression, subexpressions):
+        return self.render_crc_with_context(expression, "", subexpressions)
 
 
 class _VirtualViewFieldRenderer(_FieldRenderer):
@@ -766,6 +789,9 @@ class _VirtualViewFieldRenderer(_FieldRenderer):
         return self.render_field_read_with_context(
             expression, ir, "view_.", subexpressions
         )
+
+    def render_crc(self, expression, subexpressions):
+        return self.render_crc_with_context(expression, "view_.", subexpressions)
 
 
 class _SubexpressionStore(object):

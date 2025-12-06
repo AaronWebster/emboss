@@ -1,4 +1,4 @@
-# Copyright 2019 Google LLC
+# Copyright 2024 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,17 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
--- Functions should be formatted like `$func(arg)`, `$func(arg, arg, arg)`, or
--- `$func()`.
+[$default byte_order: "LittleEndian"]
+[(cpp) namespace: "emboss::test"]
 
-struct Foo:
-  $max  ( ) [+1]  UInt  foo
-  if $present  (foo ) :
-   $max ( 1 ) [ +  3 ]  UInt bar
-  $max ( 1   , 2 ) [ +  3 ]  UInt baz
-  $max ( 1   , 2,3,4,5,6 ) [ +  3 ]  UInt qux
-  $upper_bound(foo  ) [+1]  UInt  quux
-  $lower_bound(quux  ) [  +1  ] UInt  quuux
-  0 [+8]  UInt:8[]  data
-  if $crc32 ( data   ) == 0:
-    8 [+1]  UInt  crc_check
+
+# Test struct for CRC32 validation
+struct MessageWithCrc:
+  0 [+8]           UInt:8[]  payload
+  8 [+4]           UInt      crc32_field
+  let computed_crc = $crc32(payload)
+    -- Computed CRC32 of the payload bytes
+
+
+# Test struct that uses CRC in a requires attribute
+struct ValidatedMessage:
+  [requires: $crc32(payload) == crc32_field]
+  
+  0 [+8]           UInt:8[]  payload
+  8 [+4]           UInt      crc32_field

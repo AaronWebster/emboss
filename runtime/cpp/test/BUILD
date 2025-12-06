@@ -152,6 +152,18 @@ emboss_cc_util_test(
     ],
 )
 
+emboss_cc_util_test(
+    name = "emboss_crc_test",
+    srcs = [
+        "emboss_crc_test.cc",
+    ],
+    copts = ["-DEMBOSS_FORCE_ALL_CHECKS"],
+    deps = [
+        "//runtime/cpp:cpp_utils",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "emboss_cpp_util_google_integration_test",
     srcs = [

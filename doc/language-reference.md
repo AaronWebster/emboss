@@ -1177,7 +1177,7 @@ not on the list, email `emboss-dev@`, and we'll see about adding it.
 Emboss operators have the following precedence (tightest binding to loosest
 binding):
 
-1.  `()` `$max()` `$present()` `$upper_bound()` `$lower_bound()`
+1.  `()` `$max()` `$present()` `$upper_bound()` `$lower_bound()` `$crc32()`
 2.  unary `+` and `-` ([see note 1](#note-1-unary-plusminus-precedence))
 3.  `*`
 4.  `+` `-`
@@ -1372,6 +1372,28 @@ outsmart Emboss's bounds checker.
 
 `$lower_bound()` takes a single integer argument, and returns a single integer
 argument.
+
+
+##### `$crc32()`
+
+The `$crc32()` function computes the CRC-32 (IEEE) checksum of a byte array
+field.  This is the same CRC-32 algorithm used by Ethernet, PKZIP, and many
+other protocols.
+
+```
+struct MessageWithCrc:
+  0 [+8]  UInt:8[]  payload
+  8 [+4]  UInt      crc32_field
+  let computed_crc = $crc32(payload)
+
+struct ValidatedMessage:
+  [requires: $crc32(payload) == crc32_field]
+  0 [+8]  UInt:8[]  payload
+  8 [+4]  UInt      crc32_field
+```
+
+`$crc32()` takes a single field reference to a byte array (`UInt:8[]`) and
+returns a 32-bit unsigned integer.
 
 
 ##### Unary `+` and `-`

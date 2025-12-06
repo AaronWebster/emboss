@@ -17,11 +17,14 @@
 
 
 struct Foo:
-    $max()                 [+1]      UInt  foo
+    $max()                 [+1]      UInt      foo
     if $present(foo):
-        $max(1)                [+3]  UInt  bar
+        $max(1)                [+3]  UInt      bar
 
-    $max(1, 2)             [+3]      UInt  baz
-    $max(1, 2, 3, 4, 5, 6) [+3]      UInt  qux
-    $upper_bound(foo)      [+1]      UInt  quux
-    $lower_bound(quux)     [+1]      UInt  quuux
+    $max(1, 2)             [+3]      UInt      baz
+    $max(1, 2, 3, 4, 5, 6) [+3]      UInt      qux
+    $upper_bound(foo)      [+1]      UInt      quux
+    $lower_bound(quux)     [+1]      UInt      quuux
+    0                      [+8]      UInt:8[]  data
+    if $crc32(data) == 0:
+        8                      [+1]  UInt      crc_check

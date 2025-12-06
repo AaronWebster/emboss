@@ -3445,6 +3445,71 @@ struct Foo:
 }
 
 ===
+crc32 function
+---
+struct Foo:
+  0 [+4]  UInt:8[]  data
+  if $crc32(data) == 0:
+    4 [+1]  UInt  field
+---
+{
+  "type": [
+    {
+      "structure": {
+        "field": [
+          {
+            "name": {
+              "name": {
+                "text": "data"
+              }
+            }
+          },
+          {
+            "name": {
+              "name": {
+                "text": "field"
+              }
+            },
+            "existence_condition": {
+              "function": {
+                "function": "EQUALITY",
+                "args": [
+                  {
+                    "function": {
+                      "function": "CRC",
+                      "args": [
+                        {
+                          "field_reference": {
+                            "path": [
+                              {
+                                "source_name": [
+                                  {
+                                    "text": "data"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "constant": {
+                      "value": "0"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+===
 struct addressable_unit
 ---
 struct Foo:

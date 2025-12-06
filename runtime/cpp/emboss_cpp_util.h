@@ -22,6 +22,7 @@
 #include "runtime/cpp/emboss_bit_util.h"
 #include "runtime/cpp/emboss_constant_view.h"
 #include "runtime/cpp/emboss_cpp_types.h"
+#include "runtime/cpp/emboss_crc.h"
 #include "runtime/cpp/emboss_defines.h"
 #include "runtime/cpp/emboss_enum_view.h"
 #include "runtime/cpp/emboss_memory_util.h"

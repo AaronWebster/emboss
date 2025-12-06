@@ -201,6 +201,8 @@ class FunctionMapping(int, enum.Enum):
     """`$upper_bound()`"""
     LOWER_BOUND = 16
     """`$lower_bound()`"""
+    CRC = 17
+    """`$crc32()`"""
 
 
 @dataclasses.dataclass

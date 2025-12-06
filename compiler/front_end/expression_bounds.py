@@ -115,6 +115,8 @@ def _compute_constraints_of_function(expression, ir):
         ir_data.FunctionMapping.LOWER_BOUND,
     ):
         _compute_constraints_of_bound_function(expression)
+    elif op == ir_data.FunctionMapping.CRC:
+        _compute_constraints_of_crc_function(expression)
     else:
         assert False, "Unknown operator {!r}".format(op)
 
@@ -125,6 +127,18 @@ def _compute_constraints_of_existence_function(expression, ir):
     field = ir_util.find_object(field_path, ir)
     compute_constraints_of_expression(field.existence_condition, ir)
     ir_data_utils.builder(expression).type.CopyFrom(field.existence_condition.type)
+
+
+def _compute_constraints_of_crc_function(expression):
+    """Computes the constraints of a $crc32(field) expression.
+
+    CRC32 returns a 32-bit unsigned integer, so the result is in range [0, 2^32-1].
+    """
+    # CRC32 returns an unsigned 32-bit integer
+    expression.type.integer.modulus = "1"
+    expression.type.integer.modular_value = "0"
+    expression.type.integer.minimum_value = "0"
+    expression.type.integer.maximum_value = str(2**32 - 1)
 
 
 def _compute_constraints_of_field_reference(expression, ir):
