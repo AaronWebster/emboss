@@ -14,8 +14,10 @@
 
 #include "runtime/cpp/emboss_array_view.h"
 
+#include <array>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include "absl/strings/str_format.h"
 #include "gtest/gtest.h"
@@ -277,6 +279,149 @@ TEST(ArrayView, TextFormatOutput_MultilineComment) {
             MultilineText()),
         expected_text);
   }
+}
+
+TEST(ArrayView, CopyFromVector) {
+  ::std::uint8_t bytes[8] = {0};
+  auto byte_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{bytes, sizeof bytes}};
+
+  ::std::vector<::std::uint8_t> source = {1, 2, 3, 4, 5, 6, 7, 8};
+  byte_array.CopyFrom(source);
+
+  EXPECT_EQ(1, byte_array[0].Read());
+  EXPECT_EQ(2, byte_array[1].Read());
+  EXPECT_EQ(3, byte_array[2].Read());
+  EXPECT_EQ(4, byte_array[3].Read());
+  EXPECT_EQ(5, byte_array[4].Read());
+  EXPECT_EQ(6, byte_array[5].Read());
+  EXPECT_EQ(7, byte_array[6].Read());
+  EXPECT_EQ(8, byte_array[7].Read());
+}
+
+TEST(ArrayView, CopyFromArray) {
+  ::std::uint8_t bytes[4] = {0};
+  auto byte_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{bytes, sizeof bytes}};
+
+  ::std::array<::std::uint8_t, 4> source = {{10, 20, 30, 40}};
+  byte_array.CopyFrom(source);
+
+  EXPECT_EQ(10, byte_array[0].Read());
+  EXPECT_EQ(20, byte_array[1].Read());
+  EXPECT_EQ(30, byte_array[2].Read());
+  EXPECT_EQ(40, byte_array[3].Read());
+}
+
+TEST(ArrayView, CopyFromGenericArrayView) {
+  ::std::uint8_t source_bytes[] = {1, 2, 3, 4};
+  ::std::uint8_t dest_bytes[4] = {0};
+
+  auto source_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{source_bytes, sizeof source_bytes}};
+  auto dest_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{dest_bytes, sizeof dest_bytes}};
+
+  dest_array.CopyFrom(source_array);
+
+  EXPECT_EQ(1, dest_array[0].Read());
+  EXPECT_EQ(2, dest_array[1].Read());
+  EXPECT_EQ(3, dest_array[2].Read());
+  EXPECT_EQ(4, dest_array[3].Read());
+}
+
+TEST(ArrayView, UncheckedCopyFromVector) {
+  ::std::uint8_t bytes[4] = {0};
+  auto byte_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{bytes, sizeof bytes}};
+
+  ::std::vector<::std::uint8_t> source = {100, 101, 102, 103};
+  byte_array.UncheckedCopyFrom(source);
+
+  EXPECT_EQ(100, byte_array[0].UncheckedRead());
+  EXPECT_EQ(101, byte_array[1].UncheckedRead());
+  EXPECT_EQ(102, byte_array[2].UncheckedRead());
+  EXPECT_EQ(103, byte_array[3].UncheckedRead());
+}
+
+TEST(ArrayView, UncheckedCopyFromGenericArrayView) {
+  ::std::uint8_t source_bytes[] = {5, 6, 7, 8};
+  ::std::uint8_t dest_bytes[4] = {0};
+
+  auto source_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{source_bytes, sizeof source_bytes}};
+  auto dest_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{dest_bytes, sizeof dest_bytes}};
+
+  dest_array.UncheckedCopyFrom(source_array);
+
+  EXPECT_EQ(5, dest_array[0].UncheckedRead());
+  EXPECT_EQ(6, dest_array[1].UncheckedRead());
+  EXPECT_EQ(7, dest_array[2].UncheckedRead());
+  EXPECT_EQ(8, dest_array[3].UncheckedRead());
+}
+
+TEST(ArrayView, TryToCopyFromVector) {
+  ::std::uint8_t bytes[4] = {0};
+  auto byte_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{bytes, sizeof bytes}};
+
+  // Source with matching size should succeed
+  ::std::vector<::std::uint8_t> source = {11, 22, 33, 44};
+  EXPECT_TRUE(byte_array.TryToCopyFrom(source));
+  EXPECT_EQ(11, byte_array[0].Read());
+  EXPECT_EQ(22, byte_array[1].Read());
+  EXPECT_EQ(33, byte_array[2].Read());
+  EXPECT_EQ(44, byte_array[3].Read());
+
+  // Source with insufficient size should fail
+  ::std::vector<::std::uint8_t> short_source = {1, 2};
+  EXPECT_FALSE(byte_array.TryToCopyFrom(short_source));
+}
+
+TEST(ArrayView, TryToCopyFromGenericArrayView) {
+  ::std::uint8_t source_bytes[] = {9, 8, 7, 6};
+  ::std::uint8_t dest_bytes[4] = {0};
+
+  auto source_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{source_bytes, sizeof source_bytes}};
+  auto dest_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{dest_bytes, sizeof dest_bytes}};
+
+  EXPECT_TRUE(dest_array.TryToCopyFrom(source_array));
+  EXPECT_EQ(9, dest_array[0].Read());
+  EXPECT_EQ(8, dest_array[1].Read());
+  EXPECT_EQ(7, dest_array[2].Read());
+  EXPECT_EQ(6, dest_array[3].Read());
+}
+
+TEST(ArrayView, TryToCopyFromGenericArrayViewSizeMismatch) {
+  ::std::uint8_t source_bytes[] = {1, 2, 3};
+  ::std::uint8_t dest_bytes[4] = {0};
+
+  auto source_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{source_bytes, sizeof source_bytes}};
+  auto dest_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
+      ReadWriteContiguousBuffer{dest_bytes, sizeof dest_bytes}};
+
+  // Different sizes should fail
+  EXPECT_FALSE(dest_array.TryToCopyFrom(source_array));
+}
+
+TEST(ArrayView, CopyFrom32BitIntegers) {
+  ::std::uint8_t bytes[16] = {0};
+  auto uint32_array =
+      ArrayView<FixedUIntView<32>, ReadWriteContiguousBuffer, 4>{
+          ReadWriteContiguousBuffer{bytes, sizeof bytes}};
+
+  ::std::vector<::std::uint32_t> source = {0x12345678, 0xABCDEF01, 0x11111111,
+                                           0x22222222};
+  uint32_array.CopyFrom(source);
+
+  EXPECT_EQ(0x12345678U, uint32_array[0].Read());
+  EXPECT_EQ(0xABCDEF01U, uint32_array[1].Read());
+  EXPECT_EQ(0x11111111U, uint32_array[2].Read());
+  EXPECT_EQ(0x22222222U, uint32_array[3].Read());
 }
 
 }  // namespace test
