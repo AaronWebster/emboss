@@ -17,6 +17,7 @@
 # Attribute names which may be used by other parts of the front end.
 ADDRESSABLE_UNIT_SIZE = "addressable_unit_size"
 BYTE_ORDER = "byte_order"
+BIT_NUMBERING = "bit_numbering"
 RANGE = "range"
 FIXED_SIZE = "fixed_size_in_bits"
 IS_INTEGER = "is_integer"

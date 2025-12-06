@@ -41,6 +41,7 @@ _VALID_BYTE_ORDER = attribute_util.string_from_list(
     {"BigEndian", "LittleEndian", "Null"}
 )
 _VALID_TEXT_OUTPUT = attribute_util.string_from_list({"Emit", "Skip"})
+_VALID_BIT_NUMBERING = attribute_util.string_from_list({"Lsb0", "Msb0"})
 
 
 def _valid_back_ends(attr, module_source_file):
@@ -67,6 +68,7 @@ def _valid_back_ends(attr, module_source_file):
 # Attributes must be the same type no matter where they occur.
 _ATTRIBUTE_TYPES = {
     attributes.ADDRESSABLE_UNIT_SIZE: attribute_util.INTEGER_CONSTANT,
+    attributes.BIT_NUMBERING: _VALID_BIT_NUMBERING,
     attributes.BYTE_ORDER: _VALID_BYTE_ORDER,
     attributes.ENUM_MAXIMUM_BITS: attribute_util.INTEGER_CONSTANT,
     attributes.FIXED_SIZE: attribute_util.INTEGER_CONSTANT,
@@ -79,10 +81,12 @@ _ATTRIBUTE_TYPES = {
 }
 
 _MODULE_ATTRIBUTES = {
+    (attributes.BIT_NUMBERING, True),
     (attributes.BYTE_ORDER, True),
     (attributes.BACK_ENDS, False),
 }
 _BITS_ATTRIBUTES = {
+    (attributes.BIT_NUMBERING, False),
     (attributes.FIXED_SIZE, False),
     (attributes.REQUIRES, False),
 }

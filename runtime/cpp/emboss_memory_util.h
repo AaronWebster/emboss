@@ -975,6 +975,97 @@ class OffsetBitBlock final {
   const ::std::uint8_t ok_;
 };
 
+// OffsetBitBlockMsb0 is similar to OffsetBitBlock, but implements MSB-is-zero
+// bit numbering.  In MSB-is-zero numbering, bit 0 is the most significant bit
+// of the first byte, rather than the least significant bit of the last byte.
+//
+// This is commonly used in some big-endian protocols (e.g., older RFCs like
+// RFC 791 for IP and RFC 793 for TCP) where bits are numbered starting from
+// the high-order bit.
+//
+// For a field of size `s` at user-specified offset `o` in a `bits` block of
+// total size `N`, the physical offset is `N - o - s`.
+template <class UnderlyingBitBlockType>
+class OffsetBitBlockMsb0 final {
+ public:
+  using ValueType = typename UnderlyingBitBlockType::ValueType;
+  // Bit blocks do not use alignment information, but generated code expects bit
+  // blocks to have the same methods and types as byte blocks, so even though
+  // kNewAlignment and kNewOffset are unused, they must be present as template
+  // parameters.
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  using OffsetStorageType = OffsetBitBlockMsb0<UnderlyingBitBlockType>;
+
+  OffsetBitBlockMsb0()
+      : bit_block_(), offset_(0), size_(0), total_size_(0), ok_(false) {}
+  explicit OffsetBitBlockMsb0(UnderlyingBitBlockType bit_block,
+                              ::std::size_t offset, ::std::size_t size,
+                              ::std::size_t total_size, bool ok)
+      : bit_block_{bit_block},
+        offset_{static_cast</**/ ::std::uint8_t>(offset)},
+        size_{static_cast</**/ ::std::uint8_t>(size)},
+        total_size_{static_cast</**/ ::std::uint8_t>(total_size)},
+        ok_{offset == offset_ && size == size_ && total_size == total_size_ &&
+            ok} {}
+  OffsetBitBlockMsb0(const OffsetBitBlockMsb0 &other) = default;
+  OffsetBitBlockMsb0 &operator=(const OffsetBitBlockMsb0 &other) = default;
+
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  OffsetStorageType<kNewAlignment, kNewOffset> GetOffsetStorage(
+      ::std::size_t offset, ::std::size_t size) const {
+    return OffsetStorageType<kNewAlignment, kNewOffset>{
+        bit_block_, offset_ + offset, size, total_size_,
+        ok_ && offset + size <= size_};
+  }
+
+  // ReadUInt transforms the MSB-is-zero offset to physical offset.
+  // User offset `o` with size `s` in total bits `N` maps to physical offset
+  // `N - o - s`.
+  ValueType ReadUInt() const {
+    EMBOSS_CHECK_GE(total_size_, offset_ + size_);
+    EMBOSS_CHECK(Ok());
+    const ::std::size_t physical_offset = total_size_ - offset_ - size_;
+    return MaskToNBits(bit_block_.ReadUInt(), physical_offset + size_) >>
+           physical_offset;
+  }
+  ValueType UncheckedReadUInt() const {
+    const ::std::size_t physical_offset = total_size_ - offset_ - size_;
+    return MaskToNBits(bit_block_.UncheckedReadUInt(),
+                       physical_offset + size_) >>
+           physical_offset;
+  }
+
+  // WriteUInt transforms the MSB-is-zero offset to physical offset.
+  void WriteUInt(ValueType value) const {
+    EMBOSS_CHECK_EQ(value, MaskToNBits(value, size_));
+    EMBOSS_CHECK(Ok());
+    bit_block_.WriteUInt(MaskInValue(bit_block_.ReadUInt(), value));
+  }
+  void UncheckedWriteUInt(ValueType value) const {
+    bit_block_.UncheckedWriteUInt(
+        MaskInValue(bit_block_.UncheckedReadUInt(), value));
+  }
+
+  ::std::size_t SizeInBits() const { return size_; }
+  bool Ok() const { return ok_; }
+
+ private:
+  ValueType MaskInValue(ValueType original_value, ValueType new_value) const {
+    const ::std::size_t physical_offset = total_size_ - offset_ - size_;
+    ValueType original_mask = static_cast<ValueType>(~(
+        MaskToNBits(static_cast<ValueType>(~ValueType{0}), size_)
+        << physical_offset));
+    return static_cast<ValueType>((original_value & original_mask) |
+                                  (new_value << physical_offset));
+  }
+
+  const UnderlyingBitBlockType bit_block_;
+  const ::std::uint8_t offset_;
+  const ::std::uint8_t size_;
+  const ::std::uint8_t total_size_;
+  const ::std::uint8_t ok_;
+};
+
 // BitBlock is a view of a short, fixed-size sequence of bits somewhere in
 // memory.  Big- and little-endian values are handled by BufferType, which is
 // typically BigEndianByteOrderer<ContiguousBuffer<...>> or
@@ -1024,6 +1115,75 @@ class BitBlock final {
   // BitBlock clients must read or write the entire BitBlock value as an
   // unsigned integer.  OffsetBitBlock can be used to extract a portion of the
   // value via shift and mask, and individual view types such as IntView or
+  // BcdView are expected to convert ValueType to/from their desired types.
+  ValueType ReadUInt() const {
+    return buffer_.template ReadUInt<kBufferSizeInBits>();
+  }
+  ValueType UncheckedReadUInt() const {
+    return buffer_.template UncheckedReadUInt<kBufferSizeInBits>();
+  }
+  void WriteUInt(ValueType value) const {
+    EMBOSS_CHECK_EQ(value, MaskToNBits(value, kBufferSizeInBits));
+    buffer_.template WriteUInt<kBufferSizeInBits>(value);
+  }
+  void UncheckedWriteUInt(ValueType value) const {
+    buffer_.template UncheckedWriteUInt<kBufferSizeInBits>(value);
+  }
+
+  ::std::size_t SizeInBits() const { return kBufferSizeInBits; }
+  bool Ok() const {
+    return buffer_.Ok() && buffer_.SizeInBytes() * 8 == kBufferSizeInBits;
+  }
+
+ private:
+  BufferType buffer_;
+};
+
+// BitBlockMsb0 is a view of a short, fixed-size sequence of bits somewhere in
+// memory, with MSB-is-zero bit numbering.  In MSB-is-zero numbering, bit 0 is
+// the most significant bit of the first byte, rather than the least
+// significant bit of the last byte.
+//
+// This is similar to BitBlock but uses OffsetBitBlockMsb0 for subfield access.
+template <class BufferType, ::std::size_t kBufferSizeInBits>
+class BitBlockMsb0 final {
+  static_assert(kBufferSizeInBits % 8 == 0,
+                "BitBlockMsb0 can only operate on byte buffers.");
+  static_assert(kBufferSizeInBits <= 64,
+                "BitBlockMsb0 can only operate on small buffers.");
+
+ public:
+  using ValueType = typename LeastWidthInteger<kBufferSizeInBits>::Unsigned;
+  // As with OffsetBitBlockMsb0::OffsetStorageType, the kNewAlignment and
+  // kNewOffset values are not used, but they must be template parameters so
+  // that generated code can work with both BitBlockMsb0 and ContiguousBuffer.
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  using OffsetStorageType =
+      OffsetBitBlockMsb0<BitBlockMsb0<BufferType, kBufferSizeInBits>>;
+
+  explicit BitBlockMsb0() : buffer_() {}
+  explicit BitBlockMsb0(BufferType buffer) : buffer_{buffer} {}
+  explicit BitBlockMsb0(typename BufferType::BufferType buffer)
+      : buffer_{buffer} {}
+  BitBlockMsb0(const BitBlockMsb0 &) = default;
+  BitBlockMsb0(BitBlockMsb0 &&) = default;
+  BitBlockMsb0 &operator=(const BitBlockMsb0 &) = default;
+  BitBlockMsb0 &operator=(BitBlockMsb0 &&) = default;
+  ~BitBlockMsb0() = default;
+
+  static constexpr ::std::size_t Bits() { return kBufferSizeInBits; }
+
+  template </**/ ::std::size_t kNewAlignment, ::std::size_t kNewOffset>
+  OffsetStorageType<kNewAlignment, kNewOffset> GetOffsetStorage(
+      ::std::size_t offset, ::std::size_t size) const {
+    return OffsetStorageType<kNewAlignment, kNewOffset>{
+        *this, offset, size, kBufferSizeInBits,
+        Ok() && offset + size <= kBufferSizeInBits};
+  }
+
+  // BitBlockMsb0 clients must read or write the entire BitBlockMsb0 value as an
+  // unsigned integer.  OffsetBitBlockMsb0 can be used to extract a portion of
+  // the value via shift and mask, and individual view types such as IntView or
   // BcdView are expected to convert ValueType to/from their desired types.
   ValueType ReadUInt() const {
     return buffer_.template ReadUInt<kBufferSizeInBits>();
