@@ -247,6 +247,90 @@ class GenericArrayView final {
   }
   bool IsComplete() const { return buffer_.Ok(); }
 
+  // CopyFrom copies data from another GenericArrayView.
+  template <class OtherElementView, class OtherBufferType>
+  void CopyFrom(
+      const GenericArrayView<OtherElementView, OtherBufferType, kElementSize,
+                             kAddressableUnitSize> &other) const {
+    EMBOSS_CHECK(ElementCount() == other.ElementCount());
+    for (::std::size_t i = 0; i < ElementCount(); ++i) {
+      (*this)[i].CopyFrom(other[i]);
+    }
+  }
+
+  // CopyFrom copies data from a C++ container (e.g., std::vector, std::array).
+  // The container must have at least ElementCount() elements.
+  template <class Container>
+  typename ::std::enable_if<
+      !::std::is_base_of<
+          GenericArrayView,
+          typename ::std::remove_cv<
+              typename ::std::remove_reference<Container>::type>::type>::value,
+      void>::type
+  CopyFrom(const Container &container) const {
+    auto it = container.begin();
+    for (::std::size_t i = 0; i < ElementCount(); ++i, ++it) {
+      EMBOSS_CHECK(it != container.end());
+      (*this)[i].Write(*it);
+    }
+  }
+
+  // UncheckedCopyFrom copies data from another GenericArrayView without checks.
+  template <class OtherElementView, class OtherBufferType>
+  void UncheckedCopyFrom(
+      const GenericArrayView<OtherElementView, OtherBufferType, kElementSize,
+                             kAddressableUnitSize> &other) const {
+    for (::std::size_t i = 0; i < ElementCount(); ++i) {
+      (*this)[i].UncheckedCopyFrom(other[i]);
+    }
+  }
+
+  // UncheckedCopyFrom copies data from a C++ container without checks.
+  template <class Container>
+  typename ::std::enable_if<
+      !::std::is_base_of<
+          GenericArrayView,
+          typename ::std::remove_cv<
+              typename ::std::remove_reference<Container>::type>::type>::value,
+      void>::type
+  UncheckedCopyFrom(const Container &container) const {
+    auto it = container.begin();
+    for (::std::size_t i = 0; i < ElementCount(); ++i, ++it) {
+      (*this)[i].UncheckedWrite(*it);
+    }
+  }
+
+  // TryToCopyFrom attempts to copy data from another GenericArrayView.
+  // Returns true if the copy succeeds, false otherwise.
+  template <class OtherElementView, class OtherBufferType>
+  bool TryToCopyFrom(
+      const GenericArrayView<OtherElementView, OtherBufferType, kElementSize,
+                             kAddressableUnitSize> &other) const {
+    if (ElementCount() != other.ElementCount()) return false;
+    for (::std::size_t i = 0; i < ElementCount(); ++i) {
+      if (!(*this)[i].TryToCopyFrom(other[i])) return false;
+    }
+    return true;
+  }
+
+  // TryToCopyFrom attempts to copy data from a C++ container.
+  // Returns true if the copy succeeds, false otherwise.
+  template <class Container>
+  typename ::std::enable_if<
+      !::std::is_base_of<
+          GenericArrayView,
+          typename ::std::remove_cv<
+              typename ::std::remove_reference<Container>::type>::type>::value,
+      bool>::type
+  TryToCopyFrom(const Container &container) const {
+    auto it = container.begin();
+    for (::std::size_t i = 0; i < ElementCount(); ++i, ++it) {
+      if (it == container.end()) return false;
+      if (!(*this)[i].TryToWrite(*it)) return false;
+    }
+    return true;
+  }
+
   template <class Stream>
   bool UpdateFromTextStream(Stream *stream) const {
     return ReadArrayFromTextStream(this, stream);
