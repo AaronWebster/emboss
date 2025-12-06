@@ -26,7 +26,7 @@ from one_golden_test import OneGoldenTest
 def main(argv):
     if len(argv) < 5:
         print(
-            f"Usage: {argv[0]} emboss_front_end emboss_compiler emb_file golden_file [include_dir...]"
+            f"Usage: {argv[0]} emboss_front_end emboss_compiler emb_file golden_file [--import-dir=...] [--no-cc-enum-traits]"
         )
         return 1
 
@@ -34,12 +34,21 @@ def main(argv):
     emboss_compiler = argv[2]
     emb_file = argv[3]
     golden_file = argv[4]
-    include_dirs = argv[5:]
+    include_dirs = []
+    enable_enum_traits = True
+
+    for arg in argv[5:]:
+        if arg.startswith("--import-dir="):
+            # Extract just the directory path from --import-dir=<path>
+            include_dirs.append(arg[len("--import-dir="):])
+        elif arg == "--no-cc-enum-traits":
+            enable_enum_traits = False
 
     suite = unittest.TestSuite()
     suite.addTest(
         OneGoldenTest(
-            emboss_front_end, emboss_compiler, emb_file, golden_file, include_dirs
+            emboss_front_end, emboss_compiler, emb_file, golden_file, include_dirs,
+            enable_enum_traits
         )
     )
     runner = unittest.TextTestRunner()
