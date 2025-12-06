@@ -368,8 +368,10 @@ class GenericArrayView final {
 // compile time (dynamic-size arrays).
 //
 // ElementView should be the view class for a single array element. The element
-// view type must have SizeInBytes() method that returns the size of that
-// element.
+// view type must satisfy the following interface requirements:
+//   - SizeInBytes(): Returns the size of the element in bytes
+//   - SizeIsKnown(): Returns true if the element's size can be determined
+//   - Ok(): Returns true if the element is valid
 //
 // BufferType is the storage type that will be passed into the array.
 //
@@ -499,11 +501,11 @@ class GenericDynamicSizeArrayView final {
     static ElementView Construct(
         const ::std::tuple<ElementViewParameterTypes...> &parameters,
         BufferType buffer, ::std::size_t offset) {
-      ::std::size_t remaining = buffer.SizeInBytes() - offset;
       if (offset > buffer.SizeInBytes()) {
         // Offset is past the end of the buffer
         return ElementView();
       }
+      ::std::size_t remaining = buffer.SizeInBytes() - offset;
       return ElementView(
           ::std::get<N>(parameters)...,
           buffer.template GetOffsetStorage<1, 0>(offset, remaining));

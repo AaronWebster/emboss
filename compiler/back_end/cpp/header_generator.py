@@ -329,14 +329,6 @@ def _wrap_in_namespace(body, namespace):
     return body
 
 
-def _get_type_size(type_ir, ir):
-    size = ir_util.fixed_size_of_type_in_bits(type_ir, ir)
-    assert (
-        size is not None
-    ), "_get_type_size should only be called for constant-sized types."
-    return size
-
-
 def _offset_storage_adapter(buffer_type, alignment, static_offset):
     return "{}::template OffsetStorageType</**/{}, {}>".format(
         buffer_type, alignment, static_offset
