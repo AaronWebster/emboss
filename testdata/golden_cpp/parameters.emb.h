@@ -1176,6 +1176,7 @@ if (!parameters_initialized_) return false;
   }
   bool SizeIsKnown() const { return IntrinsicSizeInBytes().Ok(); }
 
+  static constexpr ::std::size_t IntrinsicSizeInBytes(::std::int32_t axes);
 
 
   template <typename OtherStorage>
@@ -9039,6 +9040,24 @@ GenericAxesView<
     Storage>::EmbossReservedDollarVirtualMinSizeInBytesView::UncheckedRead() {
   return Axes::MinSizeInBytes();
 }
+namespace Axes {
+inline constexpr ::std::size_t IntrinsicSizeInBytes(::std::int32_t axes) {
+  const auto emboss_reserved_local_subexpr_1 = ::emboss::support::Maybe</**/::std::int32_t>(axes);
+  const auto emboss_reserved_local_subexpr_2 = ::emboss::support::Product</**/::std::int32_t, ::std::int32_t, ::std::int32_t, ::std::int32_t>(emboss_reserved_local_subexpr_1, ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(4LL)));
+  const auto emboss_reserved_local_subexpr_3 = ::emboss::support::Sum</**/::std::int32_t, ::std::int32_t, ::std::int32_t, ::std::int32_t>(::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(0LL)), emboss_reserved_local_subexpr_2);
+  const auto emboss_reserved_local_subexpr_4 = ::emboss::support::Choice</**/::std::int32_t, ::std::int32_t, bool, ::std::int32_t, ::std::int32_t>(::emboss::support::Maybe</**/bool>(true), emboss_reserved_local_subexpr_3, ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(0LL)));
+  const auto emboss_reserved_local_subexpr_5 = ::emboss::support::GreaterThan</**/::std::int32_t, bool, ::std::int32_t, ::std::int32_t>(emboss_reserved_local_subexpr_1, ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(0LL)));
+  const auto emboss_reserved_local_subexpr_6 = ::emboss::support::Choice</**/::std::int32_t, ::std::int32_t, bool, ::std::int32_t, ::std::int32_t>(emboss_reserved_local_subexpr_5, ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(4LL)), ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(0LL)));
+  const auto emboss_reserved_local_subexpr_7 = ::emboss::support::GreaterThan</**/::std::int32_t, bool, ::std::int32_t, ::std::int32_t>(emboss_reserved_local_subexpr_1, ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(1LL)));
+  const auto emboss_reserved_local_subexpr_8 = ::emboss::support::Choice</**/::std::int32_t, ::std::int32_t, bool, ::std::int32_t, ::std::int32_t>(emboss_reserved_local_subexpr_7, ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(8LL)), ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(0LL)));
+  const auto emboss_reserved_local_subexpr_9 = ::emboss::support::GreaterThan</**/::std::int32_t, bool, ::std::int32_t, ::std::int32_t>(emboss_reserved_local_subexpr_1, ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(2LL)));
+  const auto emboss_reserved_local_subexpr_10 = ::emboss::support::Choice</**/::std::int32_t, ::std::int32_t, bool, ::std::int32_t, ::std::int32_t>(emboss_reserved_local_subexpr_9, ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(12LL)), ::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(0LL)));
+  const auto emboss_reserved_local_subexpr_11 = ::emboss::support::Maximum</**/::std::int32_t, ::std::int32_t, ::std::int32_t, ::std::int32_t, ::std::int32_t, ::std::int32_t, ::std::int32_t>(::emboss::support::Maybe</**/::std::int32_t>(static_cast</**/::std::int32_t>(0LL)), emboss_reserved_local_subexpr_4, emboss_reserved_local_subexpr_6, emboss_reserved_local_subexpr_8, emboss_reserved_local_subexpr_10);
+
+  return static_cast</**/ ::std::size_t>((emboss_reserved_local_subexpr_11).ValueOrDefault());
+}
+}  // namespace Axes
+
 namespace AxisPair {
 
 }  // namespace AxisPair

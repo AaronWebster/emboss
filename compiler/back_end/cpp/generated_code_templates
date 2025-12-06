@@ -388,6 +388,18 @@ ${write_fields}
   bool SizeIsKnown() const { return IntrinsicSizeIn${units}().Ok(); }
 
 
+// ** static_size_from_parameters_declaration ** ///////////////////////////////
+  static constexpr ::std::size_t IntrinsicSizeIn${units}(${parameters});
+
+// ** static_size_from_parameters_definition ** ////////////////////////////////
+namespace ${parent_type} {
+inline constexpr ::std::size_t IntrinsicSizeIn${units}(${parameters}) {
+${subexpressions}
+  return static_cast</**/ ::std::size_t>((${read_value}).ValueOrDefault());
+}
+}  // namespace ${parent_type}
+
+
 // ** ok_method_test ** ////////////////////////////////////////////////////////
     // If we don't have enough information to determine whether ${field} is
     // present in the structure, then structure.Ok() should be false.

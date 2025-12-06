@@ -93,6 +93,25 @@ TEST(Axes, VirtualUsingParameter) {
   EXPECT_EQ(3, view.axis_count_plus_one().Read());
 }
 
+TEST(Axes, StaticIntrinsicSizeInBytesFromParameters) {
+  // Test the static IntrinsicSizeInBytes function that takes parameters directly
+  // For Axes struct, the size is axes * 4 bytes
+  EXPECT_EQ(0U, Axes::IntrinsicSizeInBytes(0));
+  EXPECT_EQ(4U, Axes::IntrinsicSizeInBytes(1));
+  EXPECT_EQ(8U, Axes::IntrinsicSizeInBytes(2));
+  EXPECT_EQ(12U, Axes::IntrinsicSizeInBytes(3));
+  EXPECT_EQ(16U, Axes::IntrinsicSizeInBytes(4));
+  EXPECT_EQ(40U, Axes::IntrinsicSizeInBytes(10));
+
+  // Verify static function matches instance method
+  ::std::array<char, 12> values = {1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0};
+  auto view = MakeAxesView(2, &values);
+  EXPECT_EQ(view.SizeInBytes(), Axes::IntrinsicSizeInBytes(2));
+
+  auto view3 = MakeAxesView(3, &values);
+  EXPECT_EQ(view3.SizeInBytes(), Axes::IntrinsicSizeInBytes(3));
+}
+
 TEST(AxesEnvelope, FieldPassedAsParameter) {
   ::std::array<unsigned char, 9> values = {2, 0, 0, 0, 0x80, 0, 100, 0, 0};
   auto view = MakeAxesEnvelopeView(&values);

@@ -768,6 +768,104 @@ class _VirtualViewFieldRenderer(_FieldRenderer):
         )
 
 
+def _expression_only_depends_on_parameters(expression, parameter_names):
+    """Checks if an expression only depends on parameters (not fields).
+
+    Arguments:
+        expression: The expression to check.
+        parameter_names: A set of parameter names that are valid dependencies.
+
+    Returns:
+        True if the expression only depends on constants and the given parameters,
+        False if it depends on any fields.
+    """
+    expression = ir_data_utils.reader(expression)
+
+    # Constant expressions are fine
+    if expression.type.which_type == "integer":
+        if expression.type.integer.modulus == "infinity":
+            return True
+    elif expression.type.which_type == "boolean":
+        if expression.type.boolean.has_field("value"):
+            return True
+    elif expression.type.which_type == "enumeration":
+        if expression.type.enumeration.has_field("value"):
+            return True
+
+    # Check the expression kind
+    if expression.which_expression == "constant":
+        return True
+    elif expression.which_expression == "constant_reference":
+        return True
+    elif expression.which_expression == "boolean_constant":
+        return True
+    elif expression.which_expression == "field_reference":
+        # Field references can be parameters if they reference a parameter field.
+        # Parameters are represented as field_references with a single-element path
+        # where the field name matches a parameter name.
+        path = expression.field_reference.path
+        if len(path) == 1:
+            field_name = path[0].canonical_name.object_path[-1]
+            if field_name in parameter_names:
+                return True
+        return False
+    elif expression.which_expression == "builtin_reference":
+        # Check if this is a parameter reference
+        name = expression.builtin_reference.canonical_name.object_path[-1]
+        return name in parameter_names
+    elif expression.which_expression == "function":
+        # Recursively check all arguments
+        for arg in expression.function.args:
+            if not _expression_only_depends_on_parameters(arg, parameter_names):
+                return False
+        return True
+    elif expression.which_expression is None:
+        return True
+
+    return False
+
+
+class _StaticParameterFieldRenderer(object):
+    """Renderer for expressions in static parameterized functions.
+
+    This renderer is used to generate code for expressions that only depend on
+    parameters, where the parameters are passed as function arguments rather
+    than accessed through a view.
+    """
+
+    def __init__(self, parameter_names, ir):
+        """Initialize the renderer.
+
+        Arguments:
+            parameter_names: A set of parameter names.
+            ir: The IR for type lookups.
+        """
+        self._parameter_names = parameter_names
+        self._ir = ir
+
+    def render_existence(self, expression, subexpressions):
+        # Parameters always exist
+        del expression, subexpressions  # Unused
+        return _maybe_type("bool") + "(true)"
+
+    def render_field(self, expression, ir, subexpressions):
+        # For static parameter functions, field references that point to parameters
+        # should be rendered as direct variable access.
+        path = expression.field_reference.path
+        if len(path) == 1:
+            field_name = path[0].canonical_name.object_path[-1]
+            if field_name in self._parameter_names:
+                expression_cpp_type = _cpp_basic_type_for_expression(expression, ir)
+                return "{}({})".format(_maybe_type(expression_cpp_type), field_name)
+        # This shouldn't happen as we filtered expressions to only those that
+        # depend on parameters
+        assert False, (
+            "Non-parameter field reference in static parameter expression: {}".format(
+                expression
+            )
+        )
+
+
 class _SubexpressionStore(object):
     """Holder for subexpressions to be assigned to local variables."""
 
@@ -849,16 +947,22 @@ def _render_expression(expression, ir, field_reader=None, subexpressions=None):
         result = _render_builtin_operation(expression, ir, field_reader, subexpressions)
     elif expression.which_expression == "field_reference":
         result = field_reader.render_field(expression, ir, subexpressions)
-    elif (
-        expression.which_expression == "builtin_reference"
-        and expression.builtin_reference.canonical_name.object_path[-1]
-        == "$logical_value"
-    ):
-        return _ExpressionResult(
-            _maybe_type("decltype(emboss_reserved_local_value)")
-            + "(emboss_reserved_local_value)",
-            False,
-        )
+    elif expression.which_expression == "builtin_reference":
+        name = expression.builtin_reference.canonical_name.object_path[-1]
+        if name == "$logical_value":
+            return _ExpressionResult(
+                _maybe_type("decltype(emboss_reserved_local_value)")
+                + "(emboss_reserved_local_value)",
+                False,
+            )
+        elif isinstance(field_reader, _StaticParameterFieldRenderer):
+            # For static parameter functions, render parameter as direct variable
+            expression_cpp_type = _cpp_basic_type_for_expression(expression, ir)
+            result = "{}({})".format(_maybe_type(expression_cpp_type), name)
+        else:
+            # This shouldn't happen - non-logical-value builtin references should
+            # be handled by type checking
+            result = None
 
     # Any of the constant expression types should have been handled in the
     # previous section.
@@ -1232,6 +1336,105 @@ def _render_size_method(fields, ir):
     assert False, "Expected a $size_in_bits or $size_in_bytes field."
 
 
+def _generate_static_size_from_parameters(type_ir, ir):
+    """Generates a static IntrinsicSizeInBytes(params) function if applicable.
+
+    For structs where the size depends only on parameters (not on field values),
+    generates a static function that computes the size from parameters alone.
+
+    Arguments:
+      type_ir: The IR for the struct definition.
+      ir: The full IR; used for type lookups.
+
+    Returns:
+      A tuple of (declaration, definition) strings, or ("", "") if not applicable.
+    """
+    # Only applicable if the struct has parameters
+    if not type_ir.runtime_parameter:
+        return "", ""
+
+    # Find the size field ($size_in_bits or $size_in_bytes)
+    size_field = None
+    for field in type_ir.structure.field:
+        if field.name.name.text in ("$size_in_bits", "$size_in_bytes"):
+            size_field = field
+            break
+
+    if size_field is None:
+        return "", ""
+
+    # Check if the size expression already is constant (no need for parameterized version)
+    if (
+        _render_expression(size_field.read_transform, ir).is_constant
+        and _render_expression(size_field.existence_condition, ir).is_constant
+    ):
+        return "", ""
+
+    # Get the set of parameter names
+    parameter_names = set()
+    for param in type_ir.runtime_parameter:
+        parameter_names.add(param.name.name.text)
+
+    # Check if the size expression only depends on parameters
+    if not _expression_only_depends_on_parameters(
+        size_field.read_transform, parameter_names
+    ):
+        return "", ""
+
+    # Also check existence condition
+    if not _expression_only_depends_on_parameters(
+        size_field.existence_condition, parameter_names
+    ):
+        return "", ""
+
+    # Generate the static function
+    type_name = type_ir.name.name.text
+    units = "Bits" if size_field.name.name.text == "$size_in_bits" else "Bytes"
+
+    # Build parameter list
+    param_list = []
+    for param in type_ir.runtime_parameter:
+        param_type = _cpp_basic_type_for_expression_type(param.type, ir)
+        param_name = param.name.name.text
+        param_list.append("{} {}".format(param_type, param_name))
+
+    parameters = ", ".join(param_list)
+
+    # Render the expression with the static parameter renderer
+    static_field_reader = _StaticParameterFieldRenderer(parameter_names, ir)
+    subexpressions = _SubexpressionStore("emboss_reserved_local_subexpr_")
+    read_value = _render_expression(
+        size_field.read_transform,
+        ir,
+        field_reader=static_field_reader,
+        subexpressions=subexpressions,
+    )
+
+    # Build subexpressions string
+    subexpr_str = "".join(
+        [
+            "  const auto {} = {};\n".format(subexpr_name, subexpr)
+            for subexpr_name, subexpr in subexpressions.subexprs()
+        ]
+    )
+
+    declaration = code_template.format_template(
+        _TEMPLATES.static_size_from_parameters_declaration,
+        units=units,
+        parameters=parameters,
+    )
+    definition = code_template.format_template(
+        _TEMPLATES.static_size_from_parameters_definition,
+        parent_type=type_name,
+        units=units,
+        parameters=parameters,
+        subexpressions=subexpr_str,
+        read_value=read_value.rendered,
+    )
+
+    return declaration, definition
+
+
 def _visibility_for_field(field_ir):
     """Returns the C++ visibility for field_ir within its parent view."""
     # Generally, the Google style guide for hand-written C++ forbids having
@@ -1490,13 +1693,19 @@ def _generate_structure_definition(type_ir, ir, config: Config):
     else:
         text_stream_methods = ""
 
+    # Generate static IntrinsicSizeInBytes(params) if size only depends on parameters
+    static_size_declaration, static_size_definition = (
+        _generate_static_size_from_parameters(type_ir, ir)
+    )
+
     class_forward_declarations = code_template.format_template(
         _TEMPLATES.structure_view_declaration, name=type_name
     )
     class_bodies = code_template.format_template(
         _TEMPLATES.structure_view_class,
         name=type_ir.name.canonical_name.object_path[-1],
-        size_method=_render_size_method(type_ir.structure.field, ir),
+        size_method=_render_size_method(type_ir.structure.field, ir)
+        + static_size_declaration,
         field_method_declarations="".join(field_method_declarations),
         field_ok_checks="\n".join(ok_method_clauses),
         parameter_ok_checks="\n".join(parameter_checks),
@@ -1514,7 +1723,7 @@ def _generate_structure_definition(type_ir, ir, config: Config):
         initialize_parameters_initialized_true=(initialize_parameters_initialized_true),
         units=units,
     )
-    method_definitions = "\n".join(field_method_definitions)
+    method_definitions = "\n".join(field_method_definitions) + static_size_definition
     early_virtual_field_types = "\n".join(virtual_field_type_definitions)
     all_field_helper_type_definitions = "\n".join(field_helper_type_definitions)
     return (
