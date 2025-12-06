@@ -39,7 +39,8 @@ def main(argv):
 
     for arg in argv[5:]:
         if arg.startswith("--import-dir="):
-            include_dirs.append(arg)
+            # Extract just the directory path from --import-dir=<path>
+            include_dirs.append(arg[len("--import-dir="):])
         elif arg == "--no-cc-enum-traits":
             enable_enum_traits = False
 
