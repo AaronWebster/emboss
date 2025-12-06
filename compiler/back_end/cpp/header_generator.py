@@ -343,11 +343,16 @@ def _offset_storage_adapter(buffer_type, alignment, static_offset):
     )
 
 
-def _bytes_to_bits_convertor(buffer_type, byte_order, size):
+def _bytes_to_bits_convertor(buffer_type, byte_order, size, bit_numbering="Lsb0"):
     assert byte_order, "byte_order should not be empty."
-    return "{}::BitBlock</**/{}::{}ByteOrderer<typename {}>, {}>".format(
-        _SUPPORT_NAMESPACE, _SUPPORT_NAMESPACE, byte_order, buffer_type, size
-    )
+    if bit_numbering == "Msb0":
+        return "{}::BitBlockMsb0</**/{}::{}ByteOrderer<typename {}>, {}>".format(
+            _SUPPORT_NAMESPACE, _SUPPORT_NAMESPACE, byte_order, buffer_type, size
+        )
+    else:
+        return "{}::BitBlock</**/{}::{}ByteOrderer<typename {}>, {}>".format(
+            _SUPPORT_NAMESPACE, _SUPPORT_NAMESPACE, byte_order, buffer_type, size
+        )
 
 
 def _get_fully_qualified_namespace(name, ir):
@@ -365,7 +370,12 @@ def _get_fully_qualified_name(name, ir):
 
 
 def _get_adapted_cpp_buffer_type_for_field(
-    type_definition, size_in_bits, buffer_type, byte_order, parent_addressable_unit
+    type_definition,
+    size_in_bits,
+    buffer_type,
+    byte_order,
+    parent_addressable_unit,
+    bit_numbering="Lsb0",
 ):
     """Returns the adapted C++ type information needed to construct a view."""
     if (
@@ -373,7 +383,9 @@ def _get_adapted_cpp_buffer_type_for_field(
         and type_definition.addressable_unit == ir_data.AddressableUnit.BIT
     ):
         assert byte_order
-        return _bytes_to_bits_convertor(buffer_type, byte_order, size_in_bits)
+        return _bytes_to_bits_convertor(
+            buffer_type, byte_order, size_in_bits, bit_numbering
+        )
     else:
         assert (
             parent_addressable_unit == type_definition.addressable_unit
@@ -391,6 +403,7 @@ def _get_cpp_view_type_for_type_definition(
     byte_order,
     parent_addressable_unit,
     validator,
+    bit_numbering="Lsb0",
 ):
     """Returns the C++ type information needed to construct a view.
 
@@ -410,13 +423,20 @@ def _get_cpp_view_type_for_type_definition(
         parent_addressable_unit: The addressable_unit_size of the structure
             containing this structure.
         validator: The name of the validator type to be injected into the view.
+        bit_numbering: The bit numbering scheme for the type, either "Lsb0"
+            (default) or "Msb0".
 
     Returns:
         A tuple of: the C++ view type and a (possibly-empty) list of the C++ types
         of Emboss parameters which must be passed to the view's constructor.
     """
     adapted_buffer_type = _get_adapted_cpp_buffer_type_for_field(
-        type_definition, size, buffer_type, byte_order, parent_addressable_unit
+        type_definition,
+        size,
+        buffer_type,
+        byte_order,
+        parent_addressable_unit,
+        bit_numbering,
     )
     if type_definition.has_field("external"):
         # Externals do not (yet) support runtime parameters.
@@ -469,7 +489,14 @@ def _get_cpp_view_type_for_type_definition(
 
 
 def _get_cpp_view_type_for_physical_type(
-    type_ir, size, byte_order, ir, buffer_type, parent_addressable_unit, validator
+    type_ir,
+    size,
+    byte_order,
+    ir,
+    buffer_type,
+    parent_addressable_unit,
+    validator,
+    bit_numbering="Lsb0",
 ):
     """Returns the C++ type information needed to construct a field's view.
 
@@ -488,6 +515,8 @@ def _get_cpp_view_type_for_physical_type(
         parent_addressable_unit: The addressable_unit_size of the structure
             containing this type.
         validator: The name of the validator type to be injected into the view.
+        bit_numbering: The bit numbering scheme for the type, either "Lsb0"
+            (default) or "Msb0".
 
     Returns:
         A tuple of: the C++ type for a view of the given Emboss Type and a list of
@@ -514,6 +543,7 @@ def _get_cpp_view_type_for_physical_type(
                 _offset_storage_adapter(buffer_type, element_size, 0),
                 parent_addressable_unit,
                 validator,
+                bit_numbering,
             )
         )
         return (
@@ -539,6 +569,14 @@ def _get_cpp_view_type_for_physical_type(
         referenced_type = ir_util.find_object(reference, ir)
         if parent_addressable_unit > referenced_type.addressable_unit:
             assert byte_order, repr(type_ir)
+        # Get bit_numbering from the referenced type (for bits types)
+        bit_numbering_attr = ir_util.get_attribute(
+            referenced_type.attribute, "bit_numbering"
+        )
+        if bit_numbering_attr:
+            referenced_bit_numbering = bit_numbering_attr.string_constant.text
+        else:
+            referenced_bit_numbering = bit_numbering  # Use passed value as default
         reader, parameter_types = _get_cpp_view_type_for_type_definition(
             referenced_type,
             size,
@@ -547,6 +585,7 @@ def _get_cpp_view_type_for_physical_type(
             byte_order,
             parent_addressable_unit,
             validator,
+            referenced_bit_numbering,
         )
         return reader, parameter_types, list(type_ir.atomic_type.runtime_parameter)
 
@@ -885,7 +924,7 @@ def _alignment_of_location(location):
 
 
 def _get_cpp_type_reader_of_field(
-    field_ir, ir, buffer_type, validator, parent_addressable_unit
+    field_ir, ir, buffer_type, validator, parent_addressable_unit, bit_numbering="Lsb0"
 ):
     """Returns the C++ view type for a field."""
     field_size = None
@@ -911,11 +950,16 @@ def _get_cpp_type_reader_of_field(
         _offset_storage_adapter(buffer_type, field_alignment, field_offset),
         parent_addressable_unit,
         validator,
+        bit_numbering,
     )
 
 
 def _generate_structure_field_methods(
-    enclosing_type_name, field_ir, ir, parent_addressable_unit
+    enclosing_type_name,
+    field_ir,
+    ir,
+    parent_addressable_unit,
+    bit_numbering="Lsb0",
 ):
     if ir_util.field_is_virtual(field_ir):
         return _generate_structure_virtual_field_methods(
@@ -923,7 +967,7 @@ def _generate_structure_field_methods(
         )
     else:
         return _generate_structure_physical_field_methods(
-            enclosing_type_name, field_ir, ir, parent_addressable_unit
+            enclosing_type_name, field_ir, ir, parent_addressable_unit, bit_numbering
         )
 
 
@@ -1108,7 +1152,11 @@ def _generate_validator_type_for(enclosing_type_name, field_ir, ir):
 
 
 def _generate_structure_physical_field_methods(
-    enclosing_type_name, field_ir, ir, parent_addressable_unit
+    enclosing_type_name,
+    field_ir,
+    ir,
+    parent_addressable_unit,
+    bit_numbering="Lsb0",
 ):
     """Generates C++ code for methods for a single physical field.
 
@@ -1118,6 +1166,7 @@ def _generate_structure_physical_field_methods(
       ir: The full IR for the module.
       parent_addressable_unit: The addressable unit (BIT or BYTE) of the enclosing
           structure.
+      bit_numbering: The bit numbering scheme, either "Lsb0" (default) or "Msb0".
 
     Returns:
       A tuple of (declarations, definitions).  The declarations can be inserted
@@ -1131,7 +1180,8 @@ def _generate_structure_physical_field_methods(
 
     type_reader, unused_parameter_types, parameter_expressions = (
         _get_cpp_type_reader_of_field(
-            field_ir, ir, "Storage", validator_type, parent_addressable_unit
+            field_ir, ir, "Storage", validator_type, parent_addressable_unit,
+            bit_numbering
         )
     )
 
@@ -1347,6 +1397,12 @@ def _generate_structure_definition(type_ir, ir, config: Config):
         _generate_subtype_definitions(type_ir, ir, config)
     )
     type_name = type_ir.name.name.text
+    # Get bit_numbering attribute from the type, defaulting to "Lsb0"
+    bit_numbering_attr = ir_util.get_attribute(type_ir.attribute, "bit_numbering")
+    if bit_numbering_attr:
+        bit_numbering = bit_numbering_attr.string_constant.text
+    else:
+        bit_numbering = "Lsb0"
     field_helper_type_definitions = []
     field_method_declarations = []
     field_method_definitions = []
@@ -1424,7 +1480,7 @@ def _generate_structure_definition(type_ir, ir, config: Config):
     for field_index in type_ir.structure.fields_in_dependency_order:
         field = type_ir.structure.field[field_index]
         helper_types, declaration, definition = _generate_structure_field_methods(
-            type_name, field, ir, type_ir.addressable_unit
+            type_name, field, ir, type_ir.addressable_unit, bit_numbering
         )
         field_helper_type_definitions.append(helper_types)
         field_method_definitions.append(definition)

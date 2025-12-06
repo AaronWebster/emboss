@@ -1010,6 +1010,75 @@ class NormalizeIrTest(unittest.TestCase):
             error.filter_errors(attribute_checker.normalize_and_verify(ir)),
         )
 
+    def test_accepts_msb0_bit_numbering_on_bits(self):
+        ir = _make_ir_from_emb(
+            '[$default byte_order: "BigEndian"]\n'
+            "bits Foo:\n"
+            '  [bit_numbering: "Msb0"]\n'
+            "  0 [+1]  Flag  high_bit\n"
+        )
+        self.assertEqual([], attribute_checker.normalize_and_verify(ir))
+
+    def test_accepts_lsb0_bit_numbering_on_bits(self):
+        ir = _make_ir_from_emb(
+            '[$default byte_order: "BigEndian"]\n'
+            "bits Foo:\n"
+            '  [bit_numbering: "Lsb0"]\n'
+            "  7 [+1]  Flag  high_bit\n"
+        )
+        self.assertEqual([], attribute_checker.normalize_and_verify(ir))
+
+    def test_accepts_default_bit_numbering_on_module(self):
+        ir = _make_ir_from_emb(
+            '[$default bit_numbering: "Msb0"]\n'
+            '[$default byte_order: "BigEndian"]\n'
+            "bits Foo:\n"
+            "  0 [+1]  Flag  high_bit\n"
+        )
+        self.assertEqual([], attribute_checker.normalize_and_verify(ir))
+
+    def test_rejects_unknown_bit_numbering(self):
+        ir = _make_ir_from_emb(
+            '[$default byte_order: "BigEndian"]\n'
+            "bits Foo:\n"
+            '  [bit_numbering: "BadValue"]\n'
+            "  0 [+1]  Flag  high_bit\n"
+        )
+        bit_numbering_attr = ir.module[0].type[0].attribute[0]
+        self.assertEqual(
+            [
+                [
+                    error.error(
+                        "m.emb",
+                        bit_numbering_attr.value.source_location,
+                        "Attribute 'bit_numbering' must be 'Lsb0' or 'Msb0'.",
+                    )
+                ]
+            ],
+            attribute_checker.normalize_and_verify(ir),
+        )
+
+    def test_rejects_bit_numbering_on_struct(self):
+        ir = _make_ir_from_emb(
+            '[$default byte_order: "BigEndian"]\n'
+            "struct Foo:\n"
+            '  [bit_numbering: "Msb0"]\n'
+            "  0 [+1]  UInt  bar\n"
+        )
+        bit_numbering_attr = ir.module[0].type[0].attribute[0]
+        self.assertEqual(
+            [
+                [
+                    error.error(
+                        "m.emb",
+                        bit_numbering_attr.name.source_location,
+                        "Unknown attribute 'bit_numbering' on struct 'Foo'.",
+                    )
+                ]
+            ],
+            attribute_checker.normalize_and_verify(ir),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

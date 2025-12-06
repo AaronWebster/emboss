@@ -171,6 +171,73 @@ byte-order-dependent field that is not exactly 8 bits has the `"Null"` byte
 order.
 
 
+### `bit_numbering`
+
+The `bit_numbering` attribute is used to specify how bit positions are numbered
+within a `bits` type.  By default, Emboss uses LSB-is-zero numbering, where bit
+0 is the lowest-order (least significant) bit.  However, some big-endian
+protocols (particularly older ones like those defined in RFC 791 for IP and RFC
+793 for TCP) number bits with bit 0 as the highest-order (most significant) bit.
+
+`bit_numbering` takes a string value, which must be either `"Lsb0"` (default) or
+`"Msb0"`:
+
+```
+[$default byte_order: "BigEndian"]
+
+bits Lsb0Example:
+  # Default LSB-is-zero numbering
+  7 [+1]  Flag  high_bit   # Bit 7 is the MSB
+  0 [+4]  UInt  low_nibble  # Bits 0-3 are the low nibble
+  4 [+4]  UInt  high_nibble # Bits 4-7 are the high nibble
+
+bits Msb0Example:
+  [bit_numbering: "Msb0"]
+  # MSB-is-zero numbering (common in older RFCs)
+  0 [+1]  Flag  high_bit   # Bit 0 is the MSB
+  1 [+4]  UInt  high_nibble # Bits 1-4 are the high nibble
+  5 [+3]  UInt  low_bits    # Bits 5-7 are the low bits
+
+struct Message:
+  0 [+1]  Lsb0Example  lsb0_field
+    [byte_order: "BigEndian"]
+  1 [+1]  Msb0Example  msb0_field
+    [byte_order: "BigEndian"]
+```
+
+For LSB-is-zero numbering (the default), bit 0 is the least significant bit:
+
+```
+  byte 0 (for an 8-bit bits type)
++--------+
+|76543210|  <- bit numbers
++--------+
+ ^      ^
+MSB    LSB
+```
+
+For MSB-is-zero numbering, bit 0 is the most significant bit:
+
+```
+  byte 0 (for an 8-bit bits type)
++--------+
+|01234567|  <- bit numbers
++--------+
+ ^      ^
+MSB    LSB
+```
+
+A `$default` bit numbering may be set on a module.  The `bit_numbering`
+attribute can be placed on a `bits` definition to override the default.
+
+Note that `bit_numbering` only affects how bit positions are interpreted in the
+`.emb` file; it does not change the physical layout of bits in memory.  The
+same byte value `0x80` would be read as:
+- `high_bit = true` in both `Lsb0Example` and `Msb0Example`
+- `low_nibble = 0` in `Lsb0Example`, `low_bits = 0` in `Msb0Example`
+- `high_nibble = 8` in `Lsb0Example`, `high_nibble = 0` in `Msb0Example`
+
+
 ### `requires`
 
 The `requires` attribute may be placed on an atomic field (e.g., type `UInt`,
