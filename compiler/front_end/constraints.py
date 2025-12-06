@@ -77,7 +77,7 @@ def _check_that_inner_array_dimensions_are_constant(type_ir, source_file_name, e
 
 
 def _check_that_array_base_types_are_fixed_size(type_ir, source_file_name, errors, ir):
-    """Checks that the sizes of array elements are known at compile time."""
+    """Checks that the sizes of array elements are known at compile time for auto-sized arrays."""
     if type_ir.base_type.has_field("array_type"):
         # An array is fixed size if its base_type is fixed size and its array
         # dimension is constant.  This function will be called again on the inner
@@ -95,15 +95,18 @@ def _check_that_array_base_types_are_fixed_size(type_ir, source_file_name, error
         base_type.attribute, attributes.FIXED_SIZE
     )
     if base_type_fixed_size is None:
-        errors.append(
-            [
-                error.error(
-                    source_file_name,
-                    type_ir.base_type.atomic_type.source_location,
-                    "Array elements must be fixed size.",
-                )
-            ]
-        )
+        # If the array has an explicit element count, variable-sized elements are
+        # allowed. Only auto-sized arrays require fixed-size elements.
+        if type_ir.which_size == "automatic":
+            errors.append(
+                [
+                    error.error(
+                        source_file_name,
+                        type_ir.base_type.atomic_type.source_location,
+                        "Arrays with automatic size must have fixed-size elements.",
+                    )
+                ]
+            )
 
 
 def _check_that_array_base_types_in_structs_are_multiples_of_bytes(
