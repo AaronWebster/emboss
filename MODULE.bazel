@@ -15,3 +15,11 @@ bazel_dep(
     repo_name = "com_google_googletest",
 )
 bazel_dep(name = "rules_python", version = "0.31.0")
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    hub_name = "pip",
+    python_version = "3.11",
+    requirements_lock = "//:requirements.txt",
+)
+use_repo(pip, "pip")
