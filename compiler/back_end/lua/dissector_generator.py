@@ -22,7 +22,6 @@ from compiler.util import error
 from compiler.util import ir_data
 from compiler.util import ir_data_utils
 from compiler.util import ir_util
-from compiler.util import attribute_util
 
 
 def _get_documentation_text(documentation: List[ir_data.Documentation]) -> str:
@@ -45,10 +44,9 @@ def _get_documentation_text(documentation: List[ir_data.Documentation]) -> str:
 
 def _get_filter_attribute(attributes: List[ir_data.Attribute]) -> Optional[str]:
     """Get the wireshark_filter attribute value if present."""
-    for attr in attributes:
-        if attr.name and attr.name.text == "wireshark_filter":
-            if attr.value and attr.value.string_constant:
-                return attr.value.string_constant.text
+    attr_value = ir_util.get_attribute(attributes, "wireshark_filter")
+    if attr_value and attr_value.string_constant:
+        return attr_value.string_constant.text
     return None
 
 
@@ -69,7 +67,7 @@ def _sanitize_lua_identifier(name: str) -> str:
     return sanitized
 
 
-def _get_lua_type_for_field(field: ir_data.Field) -> Optional[str]:
+def _get_lua_type_for_field(field: ir_data.Field, ir: ir_data.EmbossIr) -> Optional[str]:
     """Get the Wireshark Lua type for a field."""
     if not field.type:
         return None
@@ -77,12 +75,17 @@ def _get_lua_type_for_field(field: ir_data.Field) -> Optional[str]:
     if field.type.atomic_type:
         atomic = field.type.atomic_type
         if atomic.reference:
-            ref_name = ir_util.get_reference_name(atomic.reference)
-            # Check if it's a built-in type
-            if ref_name in ["UInt", "Int"]:
-                return "uint" if ref_name == "UInt" else "int"
-            # Otherwise it's likely an enum or custom type
-            return None
+            # Find the referenced type
+            referenced_type = ir_util.find_object(atomic.reference, ir)
+            if referenced_type:
+                type_name = referenced_type.name.canonical_name.object_path[-1]
+                # Check if it's a built-in type
+                if type_name in ["UInt"]:
+                    return "uint"
+                elif type_name in ["Int"]:
+                    return "int"
+                # Otherwise it's likely an enum or custom type
+                return None
         
     return None
 
@@ -94,10 +97,10 @@ def _generate_enum_value_string(enum: ir_data.Enum, type_name: str) -> str:
     
     for value in enum.value:
         if value.name and value.value:
-            value_name = value.name.canonical_name.text
-            # Get numeric value
-            if value.value.constant and hasattr(value.value.constant, 'value'):
-                numeric_value = value.value.constant.value
+            value_name = value.name.canonical_name.object_path[-1]
+            # Get numeric value using ir_util
+            numeric_value = ir_util.constant_value(value.value)
+            if numeric_value is not None:
                 lines.append(f"  [{numeric_value}] = \"{value_name}\",")
     
     lines.append("}")
@@ -106,6 +109,7 @@ def _generate_enum_value_string(enum: ir_data.Enum, type_name: str) -> str:
 
 def _generate_field_dissector(field: ir_data.Field, 
                                parent_filter: str,
+                               ir: ir_data.EmbossIr,
                                offset_expr: str = "offset",
                                indent: str = "  ") -> Tuple[List[str], List[str]]:
     """Generate Lua code to dissect a field.
@@ -116,7 +120,7 @@ def _generate_field_dissector(field: ir_data.Field,
     if not field.name:
         return ([], [])
     
-    field_name = field.name.canonical_name.text
+    field_name = field.name.canonical_name.object_path[-1]
     sanitized_name = _sanitize_lua_identifier(field_name)
     
     # Get filter name from attribute or construct from parent
@@ -130,30 +134,39 @@ def _generate_field_dissector(field: ir_data.Field,
     # Get field documentation
     doc = _get_documentation_text(field.documentation)
     
-    # Check if this is a structure field
+    # Check if this is a structure or enum field
     is_struct = False
+    is_enum = False
+    enum_value_table = None
+    
     if field.type and field.type.atomic_type and field.type.atomic_type.reference:
-        # This might be a struct reference - we'll handle it differently
-        is_struct = True
+        # Find the referenced type
+        referenced_type = ir_util.find_object(field.type.atomic_type.reference, ir)
+        if referenced_type:
+            if referenced_type.enumeration:
+                is_enum = True
+                type_name = referenced_type.name.canonical_name.object_path[-1]
+                enum_value_table = f"{type_name}_values"
+            elif referenced_type.structure:
+                is_struct = True
     
     # Get size
     size_expr = None
     if field.location and field.location.size:
-        # Try to get constant size
-        if hasattr(field.location.size, 'constant'):
-            const = field.location.size.constant
-            if hasattr(const, 'value'):
-                size_expr = const.value
+        # Try to get constant size using ir_util
+        size_value = ir_util.constant_value(field.location.size)
+        if size_value is not None:
+            size_expr = str(size_value)
     
     if not is_struct and size_expr:
         # Generate ProtoField declaration
-        lua_type = _get_lua_type_for_field(field)
-        if lua_type:
+        lua_type = _get_lua_type_for_field(field, ir)
+        if lua_type or is_enum:
             size_bits = int(size_expr) if size_expr else 0
             size_bytes = (size_bits + 7) // 8
             
             # Determine appropriate Wireshark field type based on size
-            if lua_type == "uint":
+            if is_enum or lua_type == "uint":
                 if size_bytes <= 1:
                     ws_type = "uint8"
                 elif size_bytes <= 2:
@@ -178,9 +191,15 @@ def _generate_field_dissector(field: ir_data.Field,
             if doc:
                 desc = f'"{field_name} - {doc}"'
             
-            field_declarations.append(
-                f'ProtoField.{ws_type}("{filter_name}", {desc})'
-            )
+            # Build field declaration with enum value table if applicable
+            if is_enum and enum_value_table:
+                field_declarations.append(
+                    f'ProtoField.{ws_type}("{filter_name}", {desc}, base.DEC, {enum_value_table})'
+                )
+            else:
+                field_declarations.append(
+                    f'ProtoField.{ws_type}("{filter_name}", {desc})'
+                )
             
             # Generate dissector code
             dissector_code.append(f"{indent}-- {field_name}")
@@ -196,13 +215,14 @@ def _generate_field_dissector(field: ir_data.Field,
 
 def _generate_struct_dissector(struct: ir_data.Structure,
                                 type_def: ir_data.TypeDefinition,
-                                protocol_name: str) -> Tuple[List[str], List[str]]:
+                                protocol_name: str,
+                                ir: ir_data.EmbossIr) -> Tuple[List[str], List[str]]:
     """Generate Lua code to dissect a structure.
     
     Returns:
         Tuple of (field_declarations, dissector_function_lines)
     """
-    struct_name = type_def.name.canonical_name.text if type_def.name else "Unknown"
+    struct_name = type_def.name.canonical_name.object_path[-1] if type_def.name else "Unknown"
     
     # Get filter prefix from attribute or use protocol name
     filter_prefix = _get_filter_attribute(type_def.attribute)
@@ -215,7 +235,7 @@ def _generate_struct_dissector(struct: ir_data.Structure,
     # Generate fields
     for field in struct.field:
         field_decls, field_code = _generate_field_dissector(
-            field, filter_prefix, "offset", "    "
+            field, filter_prefix, ir, "offset", "    "
         )
         field_declarations.extend(field_decls)
         dissector_lines.extend(field_code)
@@ -281,7 +301,7 @@ def generate_dissector(ir: ir_data.EmbossIr, protocol_name: Optional[str] = None
     enum_value_strings = []
     for type_def in main_module.type:
         if type_def.enumeration:
-            type_name = type_def.name.canonical_name.text if type_def.name else "Unknown"
+            type_name = type_def.name.canonical_name.object_path[-1] if type_def.name else "Unknown"
             enum_value_strings.append(_generate_enum_value_string(type_def.enumeration, type_name))
     
     if enum_value_strings:
@@ -292,7 +312,7 @@ def generate_dissector(ir: ir_data.EmbossIr, protocol_name: Optional[str] = None
     for type_def in main_module.type:
         if type_def.structure:
             field_decls, dissector_code = _generate_struct_dissector(
-                type_def.structure, type_def, protocol_name
+                type_def.structure, type_def, protocol_name, ir
             )
             all_field_declarations.extend(field_decls)
             all_dissector_code.extend(dissector_code)
