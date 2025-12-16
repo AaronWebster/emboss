@@ -16,6 +16,7 @@
 
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
 
 package(
     default_visibility = [
@@ -38,8 +39,16 @@ py_library(
     name = "dissector_generator",
     srcs = ["dissector_generator.py"],
     deps = [
-        "//compiler/util:attribute_util",
         "//compiler/util:ir_data",
         "//compiler/util:ir_util",
+    ],
+)
+
+py_test(
+    name = "dissector_generator_test",
+    srcs = ["dissector_generator_test.py"],
+    deps = [
+        ":dissector_generator",
+        "//compiler/util:ir_data",
     ],
 )
