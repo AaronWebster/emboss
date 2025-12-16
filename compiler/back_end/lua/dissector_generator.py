@@ -75,17 +75,20 @@ def _get_lua_type_for_field(field: ir_data.Field, ir: ir_data.EmbossIr) -> Optio
     if field.type.atomic_type:
         atomic = field.type.atomic_type
         if atomic.reference:
-            # Find the referenced type
-            referenced_type = ir_util.find_object(atomic.reference, ir)
-            if referenced_type:
-                type_name = referenced_type.name.canonical_name.object_path[-1]
-                # Check if it's a built-in type
-                if type_name in ["UInt"]:
-                    return "uint"
-                elif type_name in ["Int"]:
-                    return "int"
-                # Otherwise it's likely an enum or custom type
-                return None
+            # Get the type name from the reference
+            type_name = atomic.reference.canonical_name.object_path[-1]
+            
+            # Check if it's a built-in type first (before trying to resolve)
+            if type_name in ["UInt"]:
+                return "uint"
+            elif type_name in ["Int"]:
+                return "int"
+            
+            # Try to find the referenced type to check if it's an enum
+            referenced_type = ir_util.find_object_or_none(atomic.reference, ir)
+            if referenced_type and referenced_type.enumeration:
+                # It's an enum, we'll handle it specially
+                return "enum"
         
     return None
 
@@ -141,7 +144,7 @@ def _generate_field_dissector(field: ir_data.Field,
     
     if field.type and field.type.atomic_type and field.type.atomic_type.reference:
         # Find the referenced type
-        referenced_type = ir_util.find_object(field.type.atomic_type.reference, ir)
+        referenced_type = ir_util.find_object_or_none(field.type.atomic_type.reference, ir)
         if referenced_type:
             if referenced_type.enumeration:
                 is_enum = True
@@ -166,7 +169,7 @@ def _generate_field_dissector(field: ir_data.Field,
             size_bytes = (size_bits + 7) // 8
             
             # Determine appropriate Wireshark field type based on size
-            if is_enum or lua_type == "uint":
+            if is_enum or lua_type in ("uint", "enum"):
                 if size_bytes <= 1:
                     ws_type = "uint8"
                 elif size_bytes <= 2:
