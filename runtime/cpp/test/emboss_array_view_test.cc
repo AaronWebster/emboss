@@ -281,40 +281,34 @@ TEST(ArrayView, TextFormatOutput_MultilineComment) {
 
 TEST(ArrayView, PackedBitArray_UnpackTo_12BitTo16Bit) {
   // Test unpacking 12-bit packed data to 16-bit containers
-  // 12 bits = 3 nibbles per element
-  // Pack 4 elements of 12 bits each = 48 bits = 6 bytes
+  // 3 elements of 12 bits each = 36 bits = 4.5 bytes, uses 5 bytes
+  // But ElementCount will be (6*8)/12 = 4 elements
   ::std::uint8_t packed_bytes[6] = {
-      0x34, 0x12,  // First element: 0x234 (little-endian bit packing)
-      0x78, 0x56,  // Second element: 0x678
-      0xBC, 0x9A   // Third element: 0xABC
+      0x34, 0x82, 0x67, 0xBC, 0x0A, 0x00  // Packed: 0x234, 0x678, 0xABC
   };
   
   auto byte_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
       ReadWriteContiguousBuffer{packed_bytes, sizeof packed_bytes}};
 
-  // Calculate required output size
-  const ::std::size_t element_count = 3;
-  const ::std::size_t output_size = byte_array.UnpackedSizeInBytes<16>();
-  EXPECT_EQ(element_count * 2, output_size);
-
-  // Unpack to 16-bit buffer
-  ::std::uint16_t output[3] = {0};
+  // Unpack to 16-bit buffer - will unpack 4 elements (48 bits / 12 bits each)
+  ::std::uint16_t output[4] = {0};
   bool success = byte_array.UnpackTo<16, 12>(
       reinterpret_cast<::std::uint8_t *>(output), sizeof output);
   EXPECT_TRUE(success);
 
-  // Verify unpacked values
+  // Verify unpacked values (4 elements from 6 bytes)
   EXPECT_EQ(0x234, output[0]);
   EXPECT_EQ(0x678, output[1]);
   EXPECT_EQ(0xABC, output[2]);
+  EXPECT_EQ(0x000, output[3]);  // Last element is padding
 }
 
 TEST(ArrayView, PackedBitArray_PackFrom_16BitTo12Bit) {
   // Test packing 16-bit data to 12-bit packed format
   ::std::uint16_t input[3] = {0x234, 0x678, 0xABC};
 
-  // Need 3 * 12 bits = 36 bits = 4.5 bytes, round up to 5 bytes
-  ::std::uint8_t packed_bytes[6] = {0};
+  // Need 3 * 12 bits = 36 bits = 4.5 bytes, use 5 bytes buffer
+  ::std::uint8_t packed_bytes[5] = {0};
   auto byte_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
       ReadWriteContiguousBuffer{packed_bytes, sizeof packed_bytes}};
 
@@ -324,11 +318,12 @@ TEST(ArrayView, PackedBitArray_PackFrom_16BitTo12Bit) {
 
   // Verify packed values
   EXPECT_EQ(0x34, packed_bytes[0]);
-  EXPECT_EQ(0x12, packed_bytes[1]);
-  EXPECT_EQ(0x78, packed_bytes[2]);
-  EXPECT_EQ(0x56, packed_bytes[3]);
-  EXPECT_EQ(0xBC, packed_bytes[4]);
-  EXPECT_EQ(0x9A, packed_bytes[5]);
+  EXPECT_EQ(0x82, packed_bytes[1]);
+  EXPECT_EQ(0x67, packed_bytes[2]);
+  EXPECT_EQ(0xBC, packed_bytes[3]);
+  EXPECT_EQ(0x0A, packed_bytes[4]);
+}
+  EXPECT_EQ(0xA9, packed_bytes[5]);
 }
 
 TEST(ArrayView, PackedBitArray_RoundTrip_12BitTo16Bit) {
@@ -342,6 +337,14 @@ TEST(ArrayView, PackedBitArray_RoundTrip_12BitTo16Bit) {
 
   EXPECT_TRUE(packed_array.PackFrom<16, 12>(
       reinterpret_cast<const ::std::uint8_t *>(original), 4));
+
+  // Verify packed bytes match expected
+  EXPECT_EQ(0x01, packed[0]);
+  EXPECT_EQ(0x30, packed[1]);
+  EXPECT_EQ(0x12, packed[2]);
+  EXPECT_EQ(0x56, packed[3]);
+  EXPECT_EQ(0x94, packed[4]);
+  EXPECT_EQ(0x78, packed[5]);
 
   // Unpack back to 16-bit
   ::std::uint16_t unpacked[4] = {0};

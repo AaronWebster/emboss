@@ -310,7 +310,9 @@ class GenericArrayView final {
 
     if (!Ok()) return false;
 
-    const ::std::size_t element_count = ElementCount();
+    // Calculate how many SourceBits elements fit in the buffer
+    const ::std::size_t total_bits = SizeInBytes() * 8;
+    const ::std::size_t element_count = total_bits / SourceBits;
     const ::std::size_t required_size = element_count * (TargetBits / 8);
     if (output_buffer_size < required_size) return false;
 
@@ -335,7 +337,11 @@ class GenericArrayView final {
                   "TargetBits must be <= SourceBits");
 
     if (!buffer_.Ok()) return false;
-    if (ElementCount() < element_count) return false;
+    
+    // Check if buffer can hold element_count * TargetBits bits
+    const ::std::size_t required_bits = element_count * TargetBits;
+    const ::std::size_t available_bits = SizeInBytes() * 8;
+    if (available_bits < required_bits) return false;
 
     return PackFromImpl<SourceBits, TargetBits>(input_buffer, element_count);
   }
