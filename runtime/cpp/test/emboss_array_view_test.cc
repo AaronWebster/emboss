@@ -323,8 +323,6 @@ TEST(ArrayView, PackedBitArray_PackFrom_16BitTo12Bit) {
   EXPECT_EQ(0xBC, packed_bytes[3]);
   EXPECT_EQ(0x0A, packed_bytes[4]);
 }
-  EXPECT_EQ(0xA9, packed_bytes[5]);
-}
 
 TEST(ArrayView, PackedBitArray_RoundTrip_12BitTo16Bit) {
   // Test round-trip: pack 16-bit to 12-bit, then unpack back to 16-bit

@@ -413,8 +413,12 @@ class GenericArrayView final {
         reinterpret_cast</**/ ::std::uint8_t *>(buffer_.data());
     if (output == nullptr) return false;
 
-    // Clear the output buffer first
+    // Calculate and verify output buffer size
     const ::std::size_t output_bytes = (element_count * TargetBits + 7) / 8;
+    const ::std::size_t available_bytes = buffer_.SizeInBytes();
+    if (output_bytes > available_bytes) return false;
+
+    // Clear the output buffer first
     for (::std::size_t i = 0; i < output_bytes; ++i) {
       output[i] = 0;
     }
