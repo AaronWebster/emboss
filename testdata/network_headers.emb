@@ -1,0 +1,60 @@
+# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+-- Network protocol headers for Wireshark dissector testing
+-- This file defines Ethernet, IPv4, and UDP headers matching standard specifications
+
+[$default byte_order: "BigEndian"]
+
+
+enum EtherType:
+  IPV4 = 0x0800
+  ARP  = 0x0806
+  IPV6 = 0x86DD
+
+
+enum IpProtocol:
+  ICMP = 1
+  TCP  = 6
+  UDP  = 17
+
+
+struct EthernetHeader:
+  0  [+6]  UInt  dst_mac
+  6  [+6]  UInt  src_mac
+  12 [+2]  EtherType  ethertype
+
+
+struct IPv4Header:
+  0 [+4]  bits:
+    0  [+4]   UInt  version
+    4  [+4]   UInt  ihl
+  1 [+1]  UInt  tos
+  2 [+2]  UInt  total_length
+  4 [+2]  UInt  identification
+  6 [+2]  bits:
+    0  [+3]   UInt  flags
+    3  [+13]  UInt  fragment_offset
+  8  [+1]  UInt  ttl
+  9  [+1]  IpProtocol  ip_protocol
+  10 [+2]  UInt  header_checksum
+  12 [+4]  UInt  src_ip
+  16 [+4]  UInt  dst_ip
+
+
+struct UdpHeader:
+  0 [+2]  UInt  src_port
+  2 [+2]  UInt  dst_port
+  4 [+2]  UInt  length
+  6 [+2]  UInt  checksum
