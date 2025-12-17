@@ -320,45 +320,124 @@ struct Message:
 
 ## Translation Examples
 
-### Example 1: Simple C Struct to Emboss
+### Example 1: Comprehensive Feature Demonstration
+
+This example demonstrates ALL major Emboss features in a realistic sensor telemetry packet.
 
 **Input (C):**
 ```c
 #pragma pack(push, 1)
-struct SensorData {
-    uint8_t sensor_id;
-    uint16_t temperature;  // in 0.01°C units
-    uint16_t pressure;     // in Pa
-    uint32_t timestamp;    // Unix timestamp
+struct SensorTelemetry {
+    uint8_t version;        // Protocol version
+    uint8_t sensor_id;      // Sensor identifier
+    uint8_t flags;          // Status flags (bitfield)
+    uint8_t sample_count;   // Number of samples
+    uint16_t samples[8];    // Up to 8 temperature samples
+    uint32_t timestamp;     // Unix timestamp
+    uint16_t checksum;      // Optional checksum if enabled
 };
 #pragma pack(pop)
 ```
 
 **Output (Emboss):**
 ```
--- Sensor data packet structure.
+-- Comprehensive sensor telemetry packet demonstrating all Emboss features.
 
 [$default byte_order: "LittleEndian"]
-[(cpp) namespace: "sensor"]
+[(cpp) namespace: "sensor::telemetry"]
 
-struct SensorData:
-  -- Data packet from temperature/pressure sensor.
+enum SensorType:
+  -- Type of sensor hardware.
+  TEMPERATURE = 0x01
+  PRESSURE    = 0x02
+  HUMIDITY    = 0x03
+  COMBO       = 0x04
 
-  0 [+1]  UInt  sensor_id
-    -- Unique identifier for the sensor.
+enum DataQuality:
+  -- Quality indicator for sensor readings.
+  GOOD      = 0
+  DEGRADED  = 1
+  POOR      = 2
+  INVALID   = 3
 
-  1 [+2]  UInt  raw_temperature
-    -- Temperature in 0.01°C units.
+struct SensorTelemetry:
+  -- Telemetry packet from environmental sensor array.
+  --
+  -- This structure demonstrates:
+  -- * Virtual fields (let)
+  -- * Conditional fields (if)
+  -- * Anonymous bits (inline bitfield)
+  -- * Enums
+  -- * Arrays
+  -- * Flags
+  -- * Requires statements
+  
+  [requires: version >= 1 && version <= 3 && sample_count <= 8]
 
-  let temperature_celsius = raw_temperature * 0.01
-    -- Temperature in degrees Celsius.
+  0 [+1]  UInt  version
+    -- Protocol version number (1-3).
+    [requires: this >= 1 && this <= 3]
 
-  3 [+2]  UInt  pressure
-    -- Atmospheric pressure in Pascals.
+  1 [+1]  UInt  sensor_id
+    -- Unique sensor identifier (0-255).
 
-  5 [+4]  UInt  timestamp
-    -- Unix timestamp (seconds since 1970-01-01).
+  2 [+1]  bits:
+    0 [+1]  Flag  enabled
+      -- Sensor is actively collecting data.
+    
+    1 [+1]  Flag  calibrated
+      -- Sensor has been calibrated.
+      [requires: this == true]
+    
+    2 [+1]  Flag  low_battery
+      -- Battery level is low.
+    
+    3 [+1]  Flag  checksum_present
+      -- Checksum field is present at end of packet.
+    
+    4 [+2]  UInt  sensor_type_bits
+      -- Encoded sensor type (see SensorType enum).
+    
+    6 [+2]  UInt  data_quality_bits
+      -- Data quality indicator (see DataQuality enum).
+
+  let sensor_type = (sensor_type_bits == 1 ? SensorType.TEMPERATURE : (sensor_type_bits == 2 ? SensorType.PRESSURE : (sensor_type_bits == 3 ? SensorType.HUMIDITY : SensorType.COMBO)))
+
+  let data_quality = (data_quality_bits == 0 ? DataQuality.GOOD : (data_quality_bits == 1 ? DataQuality.DEGRADED : (data_quality_bits == 2 ? DataQuality.POOR : DataQuality.INVALID)))
+
+  let is_reliable = calibrated && data_quality == DataQuality.GOOD
+
+  3 [+1]  UInt  sample_count (n)
+    -- Number of valid samples in array (0-8).
+    [requires: this <= 8]
+
+  4 [+n*2]  UInt:16[n]  samples
+    -- Temperature samples in 0.01°C units.
+
+  let timestamp_offset = 4 + n * 2
+
+  timestamp_offset [+4]  UInt  timestamp
+    -- Unix timestamp (seconds since 1970-01-01 00:00:00 UTC).
+    [requires: this > 1600000000]
+
+  let has_samples = sample_count > 0
+
+  if checksum_present:
+    timestamp_offset+4 [+2]  UInt  checksum
+      -- CRC-16 checksum of all preceding bytes.
 ```
+
+**Features Demonstrated:**
+
+1. **Virtual Fields (`let`)**: `sensor_type`, `data_quality`, `is_reliable`, `timestamp_offset`, `has_samples`
+2. **Conditional Fields (`if`)**: `checksum` field only exists when `checksum_present` flag is true
+3. **Anonymous bits**: The flags byte at offset 2 is broken down into individual `Flag` fields and bit-packed `UInt` fields
+4. **Enums**: `SensorType` and `DataQuality` with meaningful named values
+5. **Arrays**: `samples` is a variable-length array of `UInt:16` elements (based on `sample_count`)
+6. **Flags**: `enabled`, `calibrated`, `low_battery`, `checksum_present` are boolean `Flag` fields within the anonymous bits
+7. **Requires statements**: 
+   - Struct-level: Combined validation for version range and sample_count limit
+   - Field-level: version range check, calibrated must be true, sample_count ≤ 8, timestamp sanity check
 
 ### Example 2: Bitfield-Heavy Register Map
 
