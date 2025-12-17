@@ -22,9 +22,12 @@ cc_emboss_library, which creates a header file and can be used as a dep in a
 
 There is also a convenience macro, `emboss_cc_library()`, which creates an
 `emboss_library` and a `cc_emboss_library` based on it.
+
+For Wireshark Lua dissector generation, use `emboss_lua_library()`.
 """
 
 load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain")
+load("//compiler/back_end/lua:build_defs.bzl", _lua_emboss_library = "lua_emboss_library")
 
 def emboss_cc_library(name, srcs, deps = [], import_dirs = [], enable_enum_traits = True, **kwargs):
     """Constructs a C++ library from an .emb file."""
@@ -257,3 +260,33 @@ cc_emboss_library = rule(
     },
     provides = [CcInfo, EmbossInfo],
 )
+
+def emboss_lua_library(name, srcs, deps = [], import_dirs = [], **kwargs):
+    """Constructs a Wireshark Lua dissector from an .emb file.
+    
+    Args:
+        name: The name of the library.
+        srcs: List of .emb source files (must be exactly one).
+        deps: List of emboss_library dependencies.
+        import_dirs: List of import directories.
+        **kwargs: Additional arguments.
+    """
+    if len(srcs) != 1:
+        fail(
+            "Must specify exactly one Emboss source file for emboss_lua_library.",
+            "srcs",
+        )
+
+    emboss_library(
+        name = name + "_ir",
+        srcs = srcs,
+        deps = [dep + "_ir" for dep in deps],
+        import_dirs = import_dirs,
+        **kwargs
+    )
+
+    _lua_emboss_library(
+        name = name,
+        deps = [":" + name + "_ir"],
+        **kwargs
+    )
