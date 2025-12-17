@@ -424,21 +424,22 @@ TEST(ArrayView, PackedBitArray_UnpackTo_BufferTooSmall) {
 }
 
 TEST(ArrayView, PackedBitArray_UnpackedSizeInBytes) {
-  // Test UnpackedSizeInBytes calculation
+  // Test UnpackedSizeInBytes calculation for byte array
+  // The array has 6 UInt:8 elements, so ElementCount() = 6
   ::std::uint8_t bytes[6] = {0};
   auto byte_array = ArrayView<FixedUIntView<8>, ReadWriteContiguousBuffer, 1>{
       ReadWriteContiguousBuffer{bytes, sizeof bytes}};
 
-  // 6 bytes = 6 elements when unpacking to 8-bit
+  // 6 elements * 1 byte per element = 6 bytes for 8-bit target
   EXPECT_EQ(6, byte_array.UnpackedSizeInBytes<8>());
 
-  // 6 bytes = 6 elements when unpacking to 16-bit = 12 bytes
+  // 6 elements * 2 bytes per element = 12 bytes for 16-bit target
   EXPECT_EQ(12, byte_array.UnpackedSizeInBytes<16>());
 
-  // 6 bytes = 6 elements when unpacking to 32-bit = 24 bytes
+  // 6 elements * 4 bytes per element = 24 bytes for 32-bit target
   EXPECT_EQ(24, byte_array.UnpackedSizeInBytes<32>());
 
-  // 6 bytes = 6 elements when unpacking to 64-bit = 48 bytes
+  // 6 elements * 8 bytes per element = 48 bytes for 64-bit target
   EXPECT_EQ(48, byte_array.UnpackedSizeInBytes<64>());
 }
 

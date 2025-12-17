@@ -445,7 +445,7 @@ class GenericArrayView final {
 
       // Mask the value to TargetBits
       const ::std::uint64_t mask =
-          (TargetBits == 64) ? ::std::uint64_t(-1)
+          (TargetBits >= 64) ? ::std::uint64_t(-1)
                              : ((static_cast</**/ ::std::uint64_t>(1)
                                  << TargetBits) -
                                 1);
