@@ -337,7 +337,7 @@ class GenericArrayView final {
                   "TargetBits must be <= SourceBits");
 
     if (!buffer_.Ok()) return false;
-    
+
     // Check if buffer can hold element_count * TargetBits bits
     const ::std::size_t required_bits = element_count * TargetBits;
     const ::std::size_t available_bits = SizeInBytes() * 8;
@@ -376,6 +376,7 @@ class GenericArrayView final {
       // Extract SourceBits from the packed array
       ::std::uint64_t value = 0;
       for (::std::size_t bit = 0; bit < SourceBits; ++bit) {
+        // Safe: bit is always < SourceBits <= 64, so bit < 64
         const ::std::size_t byte_index = (bit_offset + bit) / 8;
         const ::std::size_t bit_index = (bit_offset + bit) % 8;
         if ((input[byte_index] >> bit_index) & 1) {
@@ -445,7 +446,7 @@ class GenericArrayView final {
 
       // Mask the value to TargetBits
       const ::std::uint64_t mask =
-          (TargetBits >= 64) ? ::std::uint64_t(-1)
+          (TargetBits == 64) ? ::std::uint64_t(-1)
                              : ((static_cast</**/ ::std::uint64_t>(1)
                                  << TargetBits) -
                                 1);
