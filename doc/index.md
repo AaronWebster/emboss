@@ -15,6 +15,10 @@ C++ Generated Code Reference](cpp-reference.md).
 Details of the textual representation Emboss uses for structures can be found in
 the [Emboss Text Format Reference](text-format.md).
 
+If you are an AI agent (such as GitHub Copilot or Gemini) helping users translate
+C/C++ structs or datasheet specifications to Emboss, please see the [AI Agent
+Guide](ai-agent-guide.md).
+
 There is a tentative [roadmap of future development](roadmap.md).
 
 If you are interested in contributing to Emboss, please read [Contributing to

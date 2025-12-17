@@ -94,3 +94,7 @@ will try to answer feature requests, bug reports, and questions, there is no SLA
 ## Getting Started
 
 Head over to the [User Guide](doc/guide.md) to get started.
+
+If you're an AI agent (such as GitHub Copilot or Gemini) helping users translate
+C/C++ structs or electronic datasheet specifications to Emboss, check out the
+[AI Agent Guide](doc/ai-agent-guide.md).
