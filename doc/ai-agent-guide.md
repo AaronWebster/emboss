@@ -333,6 +333,7 @@ struct SensorTelemetry {
     uint8_t flags;          // Status flags (bitfield)
     uint8_t sample_count;   // Number of samples
     uint16_t samples[8];    // Up to 8 temperature samples
+    int16_t calibration;    // Signed calibration offset
     uint32_t timestamp;     // Unix timestamp
     uint16_t checksum;      // Optional checksum if enabled
 };
@@ -371,17 +372,29 @@ struct SensorTelemetry:
   -- * Arrays
   -- * Flags
   -- * Requires statements
-  
+  -- * $next keyword
+  -- * Nested struct (subtype)
+  -- * $size_in_bytes
+  -- * Aliases
+  -- * $present() function
+  -- * Signed integers (Int)
+  -- * text_output attribute
   [requires: version >= 1 && version <= 3 && sample_count <= 8]
+  
+  struct CalibrationData:
+    -- Nested struct for calibration metadata.
+    0 [+2]  Int   offset
+    $next [+1]  UInt  confidence
+      [requires: this <= 100]
 
   0 [+1]  UInt  version
     -- Protocol version number (1-3).
     [requires: this >= 1 && this <= 3]
 
-  1 [+1]  UInt  sensor_id
+  $next [+1]  UInt  sensor_id
     -- Unique sensor identifier (0-255).
 
-  2 [+1]  bits:
+  $next [+1]  bits:
     0 [+1]  Flag  enabled
       -- Sensor is actively collecting data.
     
@@ -407,37 +420,54 @@ struct SensorTelemetry:
 
   let is_reliable = calibrated && data_quality == DataQuality.GOOD
 
-  3 [+1]  UInt  sample_count (n)
+  $next [+1]  UInt  sample_count (n)
     -- Number of valid samples in array (0-8).
     [requires: this <= 8]
 
-  4 [+n*2]  UInt:16[n]  samples
+  $next [+n*2]  UInt:16[n]  samples
     -- Temperature samples in 0.01°C units.
 
-  let timestamp_offset = 4 + n * 2
+  $next [+2]  Int  calibration_offset
+    -- Signed calibration offset in 0.01°C units.
+    [requires: -1000 <= this <= 1000]
 
-  timestamp_offset [+4]  UInt  timestamp
+  let cal_offset = calibration_offset
+
+  if calibrated:
+    $next [+CalibrationData.$size_in_bytes]  CalibrationData  extended_cal
+      [text_output: "Emit"]
+
+  $next [+4]  UInt  timestamp
     -- Unix timestamp (seconds since 1970-01-01 00:00:00 UTC).
     [requires: this > 1600000000]
 
   let has_samples = sample_count > 0
 
+  let has_extended_cal = $present(extended_cal)
+
   if checksum_present:
-    timestamp_offset+4 [+2]  UInt  checksum
+    $next [+2]  UInt  checksum
       -- CRC-16 checksum of all preceding bytes.
 ```
 
 **Features Demonstrated:**
 
-1. **Virtual Fields (`let`)**: `sensor_type`, `data_quality`, `is_reliable`, `timestamp_offset`, `has_samples`
-2. **Conditional Fields (`if`)**: `checksum` field only exists when `checksum_present` flag is true
-3. **Anonymous bits**: The flags byte at offset 2 is broken down into individual `Flag` fields and bit-packed `UInt` fields
+1. **Virtual Fields (`let`)**: `sensor_type`, `data_quality`, `is_reliable`, `cal_offset` (alias), `has_samples`, `has_extended_cal`
+2. **Conditional Fields (`if`)**: `extended_cal` and `checksum` fields only exist under certain conditions
+3. **Anonymous bits**: The flags byte is broken down into individual `Flag` fields and bit-packed `UInt` fields
 4. **Enums**: `SensorType` and `DataQuality` with meaningful named values
 5. **Arrays**: `samples` is a variable-length array of `UInt:16` elements (based on `sample_count`)
 6. **Flags**: `enabled`, `calibrated`, `low_battery`, `checksum_present` are boolean `Flag` fields within the anonymous bits
 7. **Requires statements**: 
    - Struct-level: Combined validation for version range and sample_count limit
-   - Field-level: version range check, calibrated must be true, sample_count ≤ 8, timestamp sanity check
+   - Field-level: version range check, calibrated must be true, sample_count ≤ 8, calibration offset range, timestamp sanity check, confidence ≤ 100
+8. **`$next` keyword**: Used throughout to avoid manual offset calculation (sensor_id, flags, sample_count, samples, calibration_offset, extended_cal, timestamp, checksum)
+9. **Nested struct (subtype)**: `CalibrationData` defined within `SensorTelemetry`
+10. **`$size_in_bytes`**: Used to size the `extended_cal` field based on `CalibrationData.$size_in_bytes`
+11. **Aliases**: `cal_offset` is an alias to `calibration_offset`
+12. **`$present()` function**: Used in `has_extended_cal` to check if conditional field `extended_cal` exists
+13. **Signed integers (Int)**: `calibration_offset` and nested `CalibrationData.offset` use signed `Int` type
+14. **`text_output` attribute**: Controls whether `extended_cal` appears in text output
 
 ### Example 2: Bitfield-Heavy Register Map
 
