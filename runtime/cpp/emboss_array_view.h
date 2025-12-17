@@ -17,6 +17,7 @@
 #define EMBOSS_RUNTIME_CPP_EMBOSS_ARRAY_VIEW_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <tuple>
 #include <type_traits>
@@ -276,6 +277,75 @@ class GenericArrayView final {
     return parameters_ == other.parameters_ && buffer_ == other.buffer_;
   }
 
+  // Packed bit array support: UnpackedSizeInBytes calculates the size needed
+  // for an unpacked buffer when unpacking to TargetBits per element.
+  // Only available for byte arrays (kAddressableUnitSize == 8).
+  template <::std::size_t TargetBits, int N = 0>
+  typename ::std::enable_if<((void)N, kAddressableUnitSize == 8),
+                            ::std::size_t>::type
+  UnpackedSizeInBytes() const {
+    static_assert(TargetBits > 0 && TargetBits <= 64,
+                  "TargetBits must be between 1 and 64");
+    static_assert(TargetBits % 8 == 0,
+                  "TargetBits must be a multiple of 8");
+    return ElementCount() * (TargetBits / 8);
+  }
+
+  // Unpacks packed bit data from this array to an external buffer.
+  // TargetBits specifies the bit width of each unpacked element (must be 8, 16,
+  // 32, or 64). SourceBits specifies the bit width of each packed element in
+  // this array (e.g., 12 for 12-bit packed data).
+  // Returns true if successful, false if buffer is too small or parameters are
+  // invalid. Only available for byte arrays (kAddressableUnitSize == 8).
+  template <::std::size_t TargetBits, ::std::size_t SourceBits, int N = 0>
+  typename ::std::enable_if<((void)N, kAddressableUnitSize == 8), bool>::type
+  UnpackTo(::std::uint8_t *output_buffer, ::std::size_t output_buffer_size) const {
+    static_assert(TargetBits == 8 || TargetBits == 16 || TargetBits == 32 ||
+                      TargetBits == 64,
+                  "TargetBits must be 8, 16, 32, or 64");
+    static_assert(SourceBits > 0 && SourceBits <= 64,
+                  "SourceBits must be between 1 and 64");
+    static_assert(SourceBits <= TargetBits,
+                  "SourceBits must be <= TargetBits");
+
+    if (!Ok()) return false;
+
+    // Calculate how many SourceBits elements fit in the buffer
+    const ::std::size_t total_bits = SizeInBytes() * 8;
+    const ::std::size_t element_count = total_bits / SourceBits;
+    const ::std::size_t required_size = element_count * (TargetBits / 8);
+    if (output_buffer_size < required_size) return false;
+
+    return UnpackToImpl<TargetBits, SourceBits>(output_buffer, element_count);
+  }
+
+  // Packs data from an external buffer into this array's packed format.
+  // SourceBits specifies the bit width of each element in the input buffer
+  // (must be 8, 16, 32, or 64). TargetBits specifies the bit width of each
+  // packed element in this array (e.g., 12 for 12-bit packed data).
+  // Returns true if successful, false if parameters are invalid.
+  // Only available for byte arrays (kAddressableUnitSize == 8).
+  template <::std::size_t SourceBits, ::std::size_t TargetBits, int N = 0>
+  typename ::std::enable_if<((void)N, kAddressableUnitSize == 8), bool>::type
+  PackFrom(const ::std::uint8_t *input_buffer, ::std::size_t element_count) {
+    static_assert(SourceBits == 8 || SourceBits == 16 || SourceBits == 32 ||
+                      SourceBits == 64,
+                  "SourceBits must be 8, 16, 32, or 64");
+    static_assert(TargetBits > 0 && TargetBits <= 64,
+                  "TargetBits must be between 1 and 64");
+    static_assert(TargetBits <= SourceBits,
+                  "TargetBits must be <= SourceBits");
+
+    if (!buffer_.Ok()) return false;
+
+    // Check if buffer can hold element_count * TargetBits bits
+    const ::std::size_t required_bits = element_count * TargetBits;
+    const ::std::size_t available_bits = SizeInBytes() * 8;
+    if (available_bits < required_bits) return false;
+
+    return PackFromImpl<SourceBits, TargetBits>(input_buffer, element_count);
+  }
+
  private:
   // This uses the same technique to select the correct definition of
   // SizeOfBuffer() as in the SizeInBits()/SizeInBytes() selection above.
@@ -290,6 +360,109 @@ class GenericArrayView final {
                             ::std::size_t>::type
   SizeOfBuffer() const {
     return SizeInBits();
+  }
+
+  // Helper function to unpack packed bits to a wider format.
+  // Uses a naive implementation that extracts bits one element at a time.
+  template <::std::size_t TargetBits, ::std::size_t SourceBits>
+  bool UnpackToImpl(::std::uint8_t *output_buffer,
+                    ::std::size_t element_count) const {
+    const ::std::uint8_t *input =
+        reinterpret_cast<const ::std::uint8_t *>(buffer_.data());
+    if (input == nullptr) return false;
+
+    ::std::size_t bit_offset = 0;
+    for (::std::size_t i = 0; i < element_count; ++i) {
+      // Extract SourceBits from the packed array
+      ::std::uint64_t value = 0;
+      for (::std::size_t bit = 0; bit < SourceBits; ++bit) {
+        // Safe: bit is always < SourceBits <= 64, so bit < 64
+        const ::std::size_t byte_index = (bit_offset + bit) / 8;
+        const ::std::size_t bit_index = (bit_offset + bit) % 8;
+        if ((input[byte_index] >> bit_index) & 1) {
+          value |= (static_cast</**/ ::std::uint64_t>(1) << bit);
+        }
+      }
+      bit_offset += SourceBits;
+
+      // Write the value to the output buffer
+      if (TargetBits == 8) {
+        output_buffer[i] = static_cast</**/ ::std::uint8_t>(value);
+      } else if (TargetBits == 16) {
+        ::std::uint16_t *output16 =
+            reinterpret_cast</**/ ::std::uint16_t *>(output_buffer);
+        output16[i] = static_cast</**/ ::std::uint16_t>(value);
+      } else if (TargetBits == 32) {
+        ::std::uint32_t *output32 =
+            reinterpret_cast</**/ ::std::uint32_t *>(output_buffer);
+        output32[i] = static_cast</**/ ::std::uint32_t>(value);
+      } else if (TargetBits == 64) {
+        ::std::uint64_t *output64 =
+            reinterpret_cast</**/ ::std::uint64_t *>(output_buffer);
+        output64[i] = value;
+      }
+    }
+    return true;
+  }
+
+  // Helper function to pack data from a wider format to packed bits.
+  // Uses a naive implementation that packs bits one element at a time.
+  template <::std::size_t SourceBits, ::std::size_t TargetBits>
+  bool PackFromImpl(const ::std::uint8_t *input_buffer,
+                    ::std::size_t element_count) {
+    ::std::uint8_t *output =
+        reinterpret_cast</**/ ::std::uint8_t *>(buffer_.data());
+    if (output == nullptr) return false;
+
+    // Calculate and verify output buffer size
+    const ::std::size_t output_bytes = (element_count * TargetBits + 7) / 8;
+    const ::std::size_t available_bytes = buffer_.SizeInBytes();
+    if (output_bytes > available_bytes) return false;
+
+    // Clear the output buffer first
+    for (::std::size_t i = 0; i < output_bytes; ++i) {
+      output[i] = 0;
+    }
+
+    ::std::size_t bit_offset = 0;
+    for (::std::size_t i = 0; i < element_count; ++i) {
+      // Read the value from the input buffer
+      ::std::uint64_t value = 0;
+      if (SourceBits == 8) {
+        value = input_buffer[i];
+      } else if (SourceBits == 16) {
+        const ::std::uint16_t *input16 =
+            reinterpret_cast<const ::std::uint16_t *>(input_buffer);
+        value = input16[i];
+      } else if (SourceBits == 32) {
+        const ::std::uint32_t *input32 =
+            reinterpret_cast<const ::std::uint32_t *>(input_buffer);
+        value = input32[i];
+      } else if (SourceBits == 64) {
+        const ::std::uint64_t *input64 =
+            reinterpret_cast<const ::std::uint64_t *>(input_buffer);
+        value = input64[i];
+      }
+
+      // Mask the value to TargetBits
+      const ::std::uint64_t mask =
+          (TargetBits == 64) ? ::std::uint64_t(-1)
+                             : ((static_cast</**/ ::std::uint64_t>(1)
+                                 << TargetBits) -
+                                1);
+      value &= mask;
+
+      // Pack TargetBits into the output array
+      for (::std::size_t bit = 0; bit < TargetBits; ++bit) {
+        const ::std::size_t byte_index = (bit_offset + bit) / 8;
+        const ::std::size_t bit_index = (bit_offset + bit) % 8;
+        if ((value >> bit) & 1) {
+          output[byte_index] |= (1 << bit_index);
+        }
+      }
+      bit_offset += TargetBits;
+    }
+    return true;
   }
 
   // This mess is needed to expand the parameters_ tuple into individual
