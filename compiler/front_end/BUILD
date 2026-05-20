@@ -23,6 +23,7 @@ load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 
 package(
+    default_applicable_licenses = ["//third_party/emboss:license"],
     default_visibility = [
         "//:__subpackages__",
     ],

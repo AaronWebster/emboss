@@ -26,6 +26,9 @@ cc_library(
         "@com_google_googletest//:gtest",
     ],
 )
+package(
+    default_applicable_licenses = ["//third_party/emboss:license"],
+)
 
 cc_test(
     name = "emboss_test_util_test",

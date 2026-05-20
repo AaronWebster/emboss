@@ -22,6 +22,7 @@ load(
 )
 
 package(
+    default_applicable_licenses = ["//third_party/emboss:license"],
     default_visibility = ["//:__subpackages__"],
 )
 

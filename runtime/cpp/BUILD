@@ -37,6 +37,9 @@ filegroup(
     ],
     visibility = ["//:__subpackages__"],
 )
+package(
+    default_applicable_licenses = ["//third_party/emboss:license"],
+)
 
 cc_library(
     name = "cpp_utils",
